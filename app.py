@@ -17,17 +17,16 @@ app = Flask(__name__)
 # This list tells your backend that it's safe to accept requests
 # from these specific web addresses.
 origins = [
-    "https://superlative-starship-988545.netlify.app", # Your LATEST Netlify frontend
-    "https://coruscating-hotteok-a5fb56.netlify.app", 
     "https://vermillion-otter-bfe24a.netlify.app",
     "https://statuesque-tiramisu-4b5936.netlify.app",
+    "https://coruscating-hotteok-a5fb56.netlify.app",
     "https://www.mosaicdigital.ai",
     "http://localhost:8000",
-    "http://127.0.0.1:5500" 
+    "http://127.0.0.1:5500"
 ]
 CORS(app, resources={r"/*": {"origins": origins}})
 
-# --- Firebase & Google AI Initialization ---
+# --- Service Initialization Globals ---
 db = None
 bucket = None
 tts_client = None
@@ -37,9 +36,14 @@ def initialize_services():
     """Initializes all external services using environment variables."""
     global db, bucket, tts_client, genai_model
 
+    # --- Use Application Default Credentials ---
+    # The Google libraries will automatically find and use the file specified
+    # in the GOOGLE_APPLICATION_CREDENTIALS environment variable.
+
     if not firebase_admin._apps:
         try:
             print("Attempting to initialize Firebase using Application Default Credentials...")
+            
             # This simplified call now works because of the GOOGLE_APPLICATION_CREDENTIALS env var.
             firebase_admin.initialize_app() 
 
@@ -75,7 +79,6 @@ def initialize_services():
 
 # --- Celery Configuration ---
 def make_celery(app):
-    """Celery factory that reads configuration from environment variables."""
     broker_url = os.environ.get('CELERY_BROKER_URL')
     if not broker_url:
         raise RuntimeError("CELERY_BROKER_URL environment variable is not set.")
@@ -97,32 +100,24 @@ celery = make_celery(app)
 # --- Core Logic Functions ---
 def generate_script_from_idea(topic, context, duration):
     print(f"Generating AI script for topic: {topic}")
-    try:
-        prompt = (f"You are a professional podcast scriptwriter. Your task is to write a compelling and engaging podcast script. "
-                  f"The script should be approximately {duration} in length. The topic of the podcast is: '{topic}'. "
-                  f"Here is some additional context: '{context}'. Please provide only the script content, without any "
-                  f"introductory or concluding remarks about the script itself. Just write the words to be spoken.")
-        response = genai_model.generate_content(prompt)
-        print("AI script generated successfully.")
-        return response.text
-    except Exception as e:
-        print(f"Error during Gemini script generation: {e}")
-        return None
+    prompt = (f"You are a professional podcast scriptwriter. Your task is to write a compelling and engaging podcast script. "
+              f"The script should be approximately {duration} in length. The topic of the podcast is: '{topic}'. "
+              f"Here is some additional context: '{context}'. Please provide only the script content, without any "
+              f"introductory or concluding remarks about the script itself. Just write the words to be spoken.")
+    response = genai_model.generate_content(prompt)
+    print("AI script generated successfully.")
+    return response.text
 
 def generate_podcast_audio(text_content, output_filepath):
     print(f"Generating audio for text (first 100 chars): {text_content[:100]}...")
-    try:
-        synthesis_input = texttospeech.SynthesisInput(text=text_content)
-        voice = texttospeech.VoiceSelectionParams(language_code="en-US", ssml_gender=texttospeech.SsmlVoiceGender.NEUTRAL)
-        audio_config = texttospeech.AudioConfig(audio_encoding=texttospeech.AudioEncoding.MP3)
-        response = tts_client.synthesize_speech(input=synthesis_input, voice=voice, audio_config=audio_config)
-        with open(output_filepath, "wb") as out:
-            out.write(response.audio_content)
-        print(f"Audio content written to file '{output_filepath}'")
-        return True
-    except Exception as e:
-        print(f"Error during Text-to-Speech generation: {e}")
-        return False
+    synthesis_input = texttospeech.SynthesisInput(text=text_content)
+    voice = texttospeech.VoiceSelectionParams(language_code="en-US", ssml_gender=texttospeech.SsmlVoiceGender.NEUTRAL)
+    audio_config = texttospeech.AudioConfig(audio_encoding=texttospeech.AudioEncoding.MP3)
+    response = tts_client.synthesize_speech(input=synthesis_input, voice=voice, audio_config=audio_config)
+    with open(output_filepath, "wb") as out:
+        out.write(response.audio_content)
+    print(f"Audio content written to file '{output_filepath}'")
+    return True
 
 def _finalize_job(job_id, local_audio_path, generated_script=None):
     print(f"Finalizing job {job_id}...")
@@ -155,7 +150,7 @@ def generate_podcast_from_idea_task(job_id, topic, context, duration):
     try:
         doc_ref.set({'topic': topic, 'context': context, 'source_type': 'idea', 'duration': duration, 'status': 'processing', 'created_at': firestore.SERVER_TIMESTAMP})
         podcast_script = generate_script_from_idea(topic, context, duration)
-        if not podcast_script: raise Exception("Failed to generate podcast script.")
+        if not podcast_script: raise Exception("Script generation failed.")
         if not generate_podcast_audio(podcast_script, output_filepath): raise Exception("Audio generation failed.")
         return _finalize_job(job_id, output_filepath, generated_script=podcast_script)
     except Exception as e:
@@ -179,7 +174,6 @@ def handle_idea_generation():
     generate_podcast_from_idea_task.delay(
         job_id, data['topic'], data['context'], data.get('duration', '5 minutes')
     )
-    print(f"API: Queued IDEA job {job_id}")
     return jsonify({"message": "Podcast generation from idea has been queued!", "job_id": job_id}), 202
 
 @app.route("/podcast-status/<job_id>", methods=["GET"])
@@ -191,7 +185,6 @@ def get_podcast_status(job_id):
             return jsonify({"error": "Job not found"}), 404
         return jsonify(doc.to_dict()), 200
     except Exception as e:
-        print(f"Error getting status for job {job_id}: {e}")
         return jsonify({"error": f"An error occurred: {e}"}), 500
 
 if __name__ == '__main__':
