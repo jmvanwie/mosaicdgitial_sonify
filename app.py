@@ -1,5 +1,4 @@
-# app.py - TEMPORARY DEBUGGING VERSION
-# In this version, we will hard-code the API key to isolate the problem.
+# app.py - Final Production Version
 
 import os
 import uuid
@@ -14,7 +13,18 @@ import google.generativeai as genai
 
 # --- App & CORS Configuration ---
 app = Flask(__name__)
-CORS(app) # Allow all origins for this debug test
+
+# This list tells your backend that it's safe to accept requests
+# from these specific web addresses.
+origins = [
+    "https://vermillion-otter-bfe24a.netlify.app",
+    "https://statuesque-tiramisu-4b5936.netlify.app",
+    "https://coruscating-hotteok-a5fb56.netlify.app",
+    "https://www.mosaicdigital.ai",
+    "http://localhost:8000",
+    "http://127.0.0.1:5500"
+]
+CORS(app, resources={r"/*": {"origins": origins}})
 
 # --- Service Initialization Globals ---
 db = None
@@ -23,13 +33,20 @@ tts_client = None
 genai_model = None
 
 def initialize_services():
-    """Initializes all external services."""
+    """Initializes all external services using environment variables."""
     global db, bucket, tts_client, genai_model
+
+    # --- Use Application Default Credentials ---
+    # The Google libraries will automatically find and use the file specified
+    # in the GOOGLE_APPLICATION_CREDENTIALS environment variable.
 
     if not firebase_admin._apps:
         try:
             print("Attempting to initialize Firebase using Application Default Credentials...")
-            firebase_admin.initialize_app()
+            
+            # This simplified call now works because of the GOOGLE_APPLICATION_CREDENTIALS env var.
+            firebase_admin.initialize_app() 
+
             db = firestore.client()
             bucket = storage.bucket(os.environ.get('FIREBASE_STORAGE_BUCKET'))
             print("Successfully connected to Firebase.")
@@ -40,6 +57,7 @@ def initialize_services():
     if tts_client is None:
         try:
             print("Initializing Google Cloud Text-to-Speech client...")
+            # This client also finds credentials from the environment automatically.
             tts_client = texttospeech.TextToSpeechClient()
             print("Text-to-Speech client initialized.")
         except Exception as e:
@@ -49,18 +67,12 @@ def initialize_services():
     if genai_model is None:
         try:
             print("Initializing Google Gemini model...")
-            
-            # ---!!! TEMPORARY HARD-CODED KEY !!!---
-            # We are putting the key directly in the code for this one test.
-            # This will prove if the rest of the code works.
-            gemini_api_key = "AIzaSyDqs5E6Ai_TiDpdLnj9diiff-pYNQ7W_BU" 
-            
-            # if gemini_api_key == "YOUR_API_KEY_HERE":
-            #     raise ValueError("CRITICAL: You must replace 'YOUR_API_KEY_HERE' in app.py with your real Gemini API key.")
-
+            gemini_api_key = os.environ.get('GEMINI_API_KEY')
+            if not gemini_api_key:
+                raise ValueError("GEMINI_API_KEY environment variable not set.")
             genai.configure(api_key=gemini_api_key)
             genai_model = genai.GenerativeModel('gemini-pro')
-            print("Gemini model initialized successfully with hard-coded key.")
+            print("Gemini model initialized.")
         except Exception as e:
             print(f"FATAL: Could not initialize Gemini model: {e}")
             raise e
@@ -85,46 +97,64 @@ def make_celery(app):
 
 celery = make_celery(app)
 
-# --- Core Logic Functions (abbreviated for clarity) ---
+# --- Core Logic Functions ---
 def generate_script_from_idea(topic, context, duration):
-    prompt = (f"You are a podcast scriptwriter. Write a script about {topic} with the context: {context}.")
+    print(f"Generating AI script for topic: {topic}")
+    prompt = (f"You are a professional podcast scriptwriter. Your task is to write a compelling and engaging podcast script. "
+              f"The script should be approximately {duration} in length. The topic of the podcast is: '{topic}'. "
+              f"Here is some additional context: '{context}'. Please provide only the script content, without any "
+              f"introductory or concluding remarks about the script itself. Just write the words to be spoken.")
     response = genai_model.generate_content(prompt)
+    print("AI script generated successfully.")
     return response.text
 
 def generate_podcast_audio(text_content, output_filepath):
+    print(f"Generating audio for text (first 100 chars): {text_content[:100]}...")
     synthesis_input = texttospeech.SynthesisInput(text=text_content)
     voice = texttospeech.VoiceSelectionParams(language_code="en-US", ssml_gender=texttospeech.SsmlVoiceGender.NEUTRAL)
     audio_config = texttospeech.AudioConfig(audio_encoding=texttospeech.AudioEncoding.MP3)
     response = tts_client.synthesize_speech(input=synthesis_input, voice=voice, audio_config=audio_config)
     with open(output_filepath, "wb") as out:
         out.write(response.audio_content)
+    print(f"Audio content written to file '{output_filepath}'")
     return True
 
 def _finalize_job(job_id, local_audio_path, generated_script=None):
+    print(f"Finalizing job {job_id}...")
     storage_path = f"podcasts/{job_id}.mp3"
     blob = bucket.blob(storage_path)
+    
+    print(f"Uploading {local_audio_path} to {storage_path}...")
     blob.upload_from_filename(local_audio_path)
     blob.make_public()
     podcast_url = blob.public_url
+    print(f"Upload complete. Public URL: {podcast_url}")
+
     os.remove(local_audio_path)
+    print(f"Removed temporary file: {local_audio_path}")
+
     update_data = {'status': 'complete', 'podcast_url': podcast_url, 'completed_at': firestore.SERVER_TIMESTAMP}
     if generated_script:
         update_data['generated_script'] = generated_script
+
     db.collection('podcasts').document(job_id).update(update_data)
+    print(f"Firestore document for job {job_id} updated to complete.")
     return {"status": "Complete", "podcast_url": podcast_url}
 
 # --- Celery Task Definitions ---
 @celery.task
 def generate_podcast_from_idea_task(job_id, topic, context, duration):
+    print(f"WORKER: Started IDEA job {job_id} for topic: {topic}")
     doc_ref = db.collection('podcasts').document(job_id)
     output_filepath = f"{job_id}.mp3"
     try:
-        doc_ref.set({'topic': topic, 'status': 'processing', 'created_at': firestore.SERVER_TIMESTAMP})
+        doc_ref.set({'topic': topic, 'context': context, 'source_type': 'idea', 'duration': duration, 'status': 'processing', 'created_at': firestore.SERVER_TIMESTAMP})
         podcast_script = generate_script_from_idea(topic, context, duration)
         if not podcast_script: raise Exception("Script generation failed.")
         if not generate_podcast_audio(podcast_script, output_filepath): raise Exception("Audio generation failed.")
         return _finalize_job(job_id, output_filepath, generated_script=podcast_script)
     except Exception as e:
+        print(f"ERROR in Celery task {job_id}: {e}")
         doc_ref.update({'status': 'failed', 'error_message': str(e)})
         if os.path.exists(output_filepath): os.remove(output_filepath)
         return {"status": "Failed", "error": str(e)}
