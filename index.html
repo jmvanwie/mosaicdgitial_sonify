@@ -6,20 +6,18 @@
     <title>Podcast Generator</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Montserrat+Alternates:wght@400;500;600&family=Roboto+Mono&family=Roboto&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Comfortaa:wght@400;500;600;700&family=Roboto:wght@400;500&display=swap" rel="stylesheet">
     
     <style>
         :root {
             --primary-glow-color: #00aaff;
-            --dark-background: #000000;
             --light-outline: #ffffff;
-            --gray-background: #f8f8f8;
-            --gray-border: #ccc;
-            --gray-text: #555;
             --white: #ffffff;
-            /* Using Montserrat Alternates for display text */
-            --font-display: "Montserrat Alternates", sans-serif;
-            --font-mono: "Roboto Mono", monospace;
+            /* Updated Brand Colors & Fonts */
+            --input-bg-color: #404e67;
+            --upload-box-bg: #b5bdc4;
+            --upload-box-border: #525e75;
+            --font-display: "Comfortaa", cursive;
             --font-body: "Roboto", sans-serif;
         }
 
@@ -34,12 +32,12 @@
         .app-container {
             display: flex;
             flex-wrap: wrap;
-            gap: 2rem;
+            gap: 2.5rem; /* Increased gap */
         }
 
         .form-column, .repository-column {
             flex: 1;
-            min-width: 320px;
+            min-width: 350px; /* Slightly wider base width */
         }
 
         .input-group {
@@ -50,76 +48,96 @@
             display: block;
             margin-bottom: 0.75rem;
             font-weight: 500;
-            font-size: 1.2rem;
+            font-size: 1.3rem; /* Slightly larger label */
             font-family: var(--font-display);
         }
 
+        /* --- Updated Input Box Styles --- */
         .form-input {
             width: 100%;
-            padding: 12px 15px;
+            padding: 18px 20px; /* Increased padding for more height */
             border: 2px solid var(--light-outline);
-            background-color: var(--dark-background);
+            background-color: var(--input-bg-color); /* New background color */
             color: var(--light-outline);
-            border-radius: 8px;
-            font-family: var(--font-mono);
-            font-size: 1.1rem;
+            border-radius: 10px; /* More rounded corners */
+            font-family: var(--font-display);
+            font-size: 1.2rem; /* Larger font for input */
             transition: all 0.3s ease;
             box-sizing: border-box;
         }
 
-        .form-input::placeholder { color: #aaa; font-family: var(--font-mono); }
+        .form-input::placeholder {
+            color: #ccc;
+            opacity: 0.7;
+            font-family: var(--font-display);
+        }
+
         .form-input:focus {
             outline: none;
             border-color: var(--primary-glow-color);
-            box-shadow: 0 0 0 3px rgba(0, 170, 255, 0.35);
+            box-shadow: 0 0 0 4px rgba(0, 170, 255, 0.35);
         }
-        textarea.form-input { min-height: 120px; resize: vertical; }
+
+        textarea.form-input {
+            min-height: 150px; /* Taller text area */
+            resize: vertical;
+        }
 
         /* --- Updated File Drop Area --- */
         .file-drop-area {
             margin-top: 1rem;
-            border: 2px dashed var(--gray-border); /* Dark gray border */
-            border-radius: 8px;
-            padding: 2rem;
+            border: 3px dashed var(--upload-box-border); /* Thicker, new color border */
+            border-radius: 10px;
+            padding: 2.5rem 1.5rem; /* More vertical padding */
             text-align: center;
             font-family: var(--font-display);
-            font-size: 1.1rem;
-            background-color: var(--gray-background); /* Gray background */
-            color: var(--gray-text); /* Dark gray text */
+            font-size: 1.2rem;
+            font-weight: 600;
+            background-color: var(--upload-box-bg); /* New background color */
+            color: var(--upload-box-border); /* New text color */
             transition: background-color 0.3s ease;
         }
 
-        .file-drop-area:hover { background-color: #e9e9e9; cursor: pointer; }
-        .file-upload-icon {
-            font-size: 2rem;
-            line-height: 1;
-            margin-bottom: 0.5rem;
-            display: block;
+        .file-drop-area:hover {
+            background-color: #a9b1b8;
+            cursor: pointer;
+        }
+        
+        .file-upload-icon svg {
+            width: 40px; /* Icon size */
+            height: 40px;
+            margin-bottom: 0.8rem;
         }
 
         .generate-btn {
             background-color: var(--light-outline);
-            color: var(--dark-background);
+            color: #000;
             border: none;
-            padding: 12px 25px;
-            border-radius: 8px;
-            font-size: 1.1rem;
+            padding: 15px 25px;
+            border-radius: 10px;
+            font-size: 1.2rem;
             font-family: var(--font-display);
-            font-weight: 600;
+            font-weight: 700;
             cursor: pointer;
             transition: all 0.3s ease;
             width: 100%;
-            margin-top: 1rem;
+            margin-top: 1.5rem;
         }
-        .generate-btn:hover { background-color: var(--primary-glow-color); color: var(--white); }
-
-        #status-container, .repository-item { display: none; } /* Hide until used */
+        
+        .generate-btn:hover {
+            background-color: var(--primary-glow-color);
+            color: var(--white);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 10px rgba(0, 170, 255, 0.2);
+        }
         
         /* Other styles for progress bar, repository, etc. remain the same */
+        .repository-title { font-family: var(--font-display); }
 
     </style>
 </head>
 <body>
+
     <div class="app-container">
         <div class="form-column">
             <div class="input-group">
@@ -131,11 +149,15 @@
                 <textarea id="context" class="form-input" placeholder="Type your script or ideas here..."></textarea>
             </div>
             <div class="file-drop-area">
-                <span class="file-upload-icon">↑</span>
-                Drag & drop a file here, or click to upload
+                <div class="file-upload-icon">
+                    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M12 2C6.48 2 2 6.48 2 12C2 17.52 6.48 22 12 22C17.52 22 22 17.52 22 12C22 6.48 17.52 2 12 2ZM12 20C7.59 20 4 16.41 4 12C4 7.59 7.59 4 12 4C16.41 4 20 7.59 20 12C20 16.41 16.41 20 12 20ZM13 12V16H11V12H8L12 8L16 12H13Z" fill="#525e75"/>
+                    </svg>
+                </div>
+                Drag & drop a file, or click to upload
             </div>
             <button class="generate-btn">Create My Podcast</button>
-            <div id="status-container">
+            <div id="status-container" style="display: none;">
                 <div id="progress-bar"></div>
             </div>
         </div>
@@ -147,6 +169,7 @@
     
     <script>
       // The JavaScript functionality remains the same for now
+      // We will add logic for the file drop later
     </script>
 </body>
 </html>
