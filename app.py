@@ -14,13 +14,13 @@ import google.generativeai as genai
 # --- App & CORS Configuration ---
 app = Flask(__name__)
 
-# IMPORTANT: Update the placeholder with your actual Netlify frontend's URL.
-# This tells your backend that it's safe to accept requests from your frontend.
+# This list tells your backend that it's safe to accept requests
+# from these specific web addresses.
 origins = [
-    "https://686273a2966d036ba338ad88--statuesque-tiramisu-4b5936.netlify.app/", # <-- IMPORTANT: REPLACE THIS!
-    "https://www.mosaicdigital.ai",               # Your main Wix domain
-    "http://localhost:8000",                      # For local testing
-    "http://127.0.0.1:5500"                      # For local testing with VS Code Live Server
+    "https://https://statuesque-tiramisu-4b5936.netlify.app/", # Your Netlify frontend
+    "https://www.mosaicdigital.ai",                     # Your main Wix domain
+    "http://localhost:8000",                            # For local testing
+    "http://127.0.0.1:5500"                            # For local testing with VS Code Live Server
 ]
 CORS(app, resources={r"/*": {"origins": origins}})
 
