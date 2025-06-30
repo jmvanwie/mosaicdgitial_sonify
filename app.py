@@ -17,7 +17,7 @@ app = Flask(__name__)
 # This list tells your backend that it's safe to accept requests
 # from these specific web addresses.
 origins = [
-    "https://statuesque-tiramisu-4b5936.netlify.app", # Your Netlify frontend
+    "https://vermillion-otter-bfe24a.netlify.app", # Your Netlify frontend
     "https://euphonious-sopapillas-66b86f.netlify.app", # Your other Netlify frontend
     "https://www.mosaicdigital.ai",                     # Your main Wix domain
     "http://localhost:8000",                            # For local testing
