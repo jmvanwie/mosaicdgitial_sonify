@@ -53,11 +53,10 @@ def initialize_services():
             # ---!!! TEMPORARY HARD-CODED KEY !!!---
             # We are putting the key directly in the code for this one test.
             # This will prove if the rest of the code works.
-            # IMPORTANT: Replace "YOUR_API_KEY_HERE" with your actual Gemini API Key.
             gemini_api_key = "AIzaSyDqs5E6Ai_TiDpdLnj9diiff-pYNQ7W_BU" 
             
-            if gemini_api_key == "AIzaSyDqs5E6Ai_TiDpdLnj9diiff-pYNQ7W_BU":
-                raise ValueError("CRITICAL: You must replace 'YOUR_API_KEY_HERE' in app.py with your real Gemini API key.")
+            # if gemini_api_key == "YOUR_API_KEY_HERE":
+            #     raise ValueError("CRITICAL: You must replace 'YOUR_API_KEY_HERE' in app.py with your real Gemini API key.")
 
             genai.configure(api_key=gemini_api_key)
             genai_model = genai.GenerativeModel('gemini-pro')
