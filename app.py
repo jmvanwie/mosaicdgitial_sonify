@@ -8,7 +8,7 @@ from celery import Celery
 import firebase_admin
 from firebase_admin import credentials as firebase_credentials, firestore, storage
 from google.cloud import texttospeech
-from google.oauth2 import service_account
+# from google.oauth2 import service_account # No longer needed for manual loading
 import google.generativeai as genai
 
 # --- App & CORS Configuration ---
@@ -30,33 +30,31 @@ db = None
 bucket = None
 tts_client = None
 genai_model = None
-google_creds = None # Global for Google credentials
+# google_creds is no longer needed
 
 def initialize_services():
     """Initializes all external services using environment variables."""
-    global db, bucket, tts_client, genai_model, google_creds
+    global db, bucket, tts_client, genai_model
 
-    # --- THE CORE FIX: Load credentials ONCE ---
-    if google_creds is None:
-        try:
-            print("Loading Google Service Account credentials...")
-            cred_path = os.environ.get('GOOGLE_APPLICATION_CREDENTIALS', 'firebase_service_account.json')
-            if not os.path.exists(cred_path):
-                 raise FileNotFoundError(f"Service account key not found at path: {cred_path}.")
-            google_creds = service_account.Credentials.from_service_account_file(cred_path)
-            print("Google credentials loaded successfully.")
-        except Exception as e:
-            print(f"FATAL: Could not load Google credentials: {e}")
-            raise e
+    # --- THE CORE FIX: Use Application Default Credentials ---
+    # Render automatically sets the GOOGLE_APPLICATION_CREDENTIALS environment
+    # variable when you upload a secret file. The Google libraries find this
+    # automatically, so we don't need to load the file manually.
 
     if not firebase_admin._apps:
         try:
             print("Attempting to initialize Firebase...")
-            firebase_cred = firebase_credentials.Certificate(google_creds)
+            # Use Application Default Credentials
+            cred = firebase_credentials.ApplicationDefault()
+            
             storage_bucket_url = os.environ.get('FIREBASE_STORAGE_BUCKET')
             if not storage_bucket_url:
                 raise ValueError("FIREBASE_STORAGE_BUCKET environment variable not set.")
-            firebase_admin.initialize_app(firebase_cred, {'storageBucket': storage_bucket_url})
+
+            firebase_admin.initialize_app(cred, {
+                'storageBucket': storage_bucket_url,
+                'projectId': os.environ.get('FIREBASE_PROJECT_ID') # Good practice to be explicit
+            })
             db = firestore.client()
             bucket = storage.bucket()
             print("Successfully connected to Firebase.")
@@ -67,8 +65,8 @@ def initialize_services():
     if tts_client is None:
         try:
             print("Initializing Google Cloud Text-to-Speech client...")
-            # Explicitly pass the loaded credentials to the TTS client
-            tts_client = texttospeech.TextToSpeechClient(credentials=google_creds)
+            # This client will also find the credentials from the environment automatically.
+            tts_client = texttospeech.TextToSpeechClient()
             print("Text-to-Speech client initialized.")
         except Exception as e:
             print(f"FATAL: Could not initialize TTS client: {e}")
