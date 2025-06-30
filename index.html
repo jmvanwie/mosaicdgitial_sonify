@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>TESS - AI Podcast Generator</title>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+            background-color: #f4f4f9;
+            color: #333;
+            max-width: 700px;
+            margin: 50px auto;
+            padding: 2em;
+            border-radius: 10px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            line-height: 1.6;
+        }
+        h1 {
+            color: #1a1a1a;
+            text-align: center;
+        }
+        .form-group {
+            margin-bottom: 1.5em;
+        }
+        label {
+            display: block;
+            margin-bottom: 0.5em;
+            font-weight: bold;
+        }
+        input[type="text"] {
+            width: 100%;
+            padding: 0.8em;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            box-sizing: border-box;
+        }
+        button {
+            display: block;
+            width: 100%;
+            padding: 1em;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            font-size: 1em;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        button:disabled {
+            background-color: #a0c7ff;
+            cursor: not-allowed;
+        }
+        button:hover:not(:disabled) {
+            background-color: #0056b3;
+        }
+        #status {
+            margin-top: 1.5em;
+            padding: 1em;
+            background-color: #e9ecef;
+            border-radius: 5px;
+            text-align: center;
+        }
+        #audioPlayer {
+            width: 100%;
+            margin-top: 1.5em;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>TESS - AI Podcast Generator</h1>
+
+    <div class="form-group">
+        <label for="topicInput">Topic:</label>
+        <input type="text" id="topicInput" placeholder="e.g., The History of Ancient Rome">
+    </div>
+
+    <div class="form-group">
+        <label for="contextInput">Context:</label>
+        <input type="text" id="contextInput" placeholder="e.g., Focus on the rise and fall of the Republic">
+    </div>
+
+    <button id="generateButton">Generate Podcast</button>
+
+    <div id="status">Enter a topic and context to begin.</div>
+
+    <audio id="audioPlayer" controls style="display: none;"></audio>
+
+    <script>
+        // --- CONFIGURATION ---
+        const backendUrl = "https://5fe9-47-199-148-205.ngrok-free.app"; // Make sure this matches your current ngrok URL!
+        let pollingInterval;
+
+        // --- GET REFERENCES TO HTML ELEMENTS ---
+        const generateButton = document.getElementById('generateButton');
+        const topicInput = document.getElementById('topicInput');
+        const contextInput = document.getElementById('contextInput');
+        const statusDiv = document.getElementById('status');
+        const audioPlayer = document.getElementById('audioPlayer');
+
+        // --- EVENT LISTENER ---
+        generateButton.addEventListener('click', async () => {
+            const topic = topicInput.value;
+            const context = contextInput.value;
+
+            if (!topic || !context) {
+                statusDiv.textContent = "Please fill out all fields.";
+                return;
+            }
+
+            // --- UI UPDATES ---
+            generateButton.disabled = true;
+            statusDiv.textContent = "Submitting your request...";
+            audioPlayer.style.display = 'none';
+
+            // --- API CALL ---
+            try {
+                const response = await fetch(backendUrl + "/generate-from-idea", {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ topic, context, duration: "5 minutes" })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`Server responded with status: ${response.status}`);
+                }
+                
+                const responseData = await response.json();
+                statusDiv.textContent = "Job submitted! Now processing...";
+                startPolling(responseData.job_id);
+
+            } catch (error) {
+                statusDiv.textContent = "A fatal error occurred. Could not connect to the backend.";
+                generateButton.disabled = false;
+                console.error("Error submitting job:", error);
+            }
+        });
+
+        // --- POLLING FUNCTION ---
+        function startPolling(jobId) {
+            pollingInterval = setInterval(async () => {
+                try {
+                    const response = await fetch(`${backendUrl}/podcast-status/${jobId}`);
+                    
+                    if (!response.ok) {
+                        throw new Error(`Server responded with status: ${response.status}`);
+                    }
+
+                    const statusData = await response.json();
+                    statusDiv.textContent = `Status: ${statusData.status}...`;
+
+                    if (statusData.status === 'complete') {
+                        clearInterval(pollingInterval);
+                        statusDiv.textContent = "Your podcast is ready!";
+                        audioPlayer.src = statusData.podcast_url;
+                        audioPlayer.style.display = 'block';
+                        generateButton.disabled = false;
+                    } else if (statusData.status === 'failed') {
+                        clearInterval(pollingInterval);
+                        statusDiv.textContent = `Job failed: ${statusData.error_message}`;
+                        generateButton.disabled = false;
+                    }
+                } catch (error) {
+                    console.error("Polling error:", error);
+                    clearInterval(pollingInterval);
+                    statusDiv.textContent = "Error checking job status.";
+                    generateButton.disabled = false;
+                }
+            }, 5000); // Check every 5 seconds
+        }
+    </script>
+
+</body>
+</html>

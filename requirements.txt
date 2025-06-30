@@ -1,0 +1,10 @@
+flask
+celery
+redis
+firebase-admin
+PyPDF2
+google-cloud-texttospeech
+google-generativeai
+pydub
+google-auth-oauthlib
+Flask-CORS
