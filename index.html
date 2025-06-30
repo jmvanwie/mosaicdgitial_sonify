@@ -2,176 +2,342 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>TESS - AI Podcast Generator</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Podcast Generator</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;500&family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+    
     <style>
+        /* --- General & Layout --- */
+        :root {
+            --primary-glow-color: #00aaff;
+            --dark-background: #000000;
+            --light-outline: #ffffff;
+            --light-gray: #f0f2f5;
+            --white: #ffffff;
+            --shadow-color: rgba(255, 255, 255, 0.1);
+            /* Updated Font Variables */
+            --font-display: "Roboto Mono", monospace;
+            --font-body: "Roboto", sans-serif;
+        }
+
         body {
-            font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
-            background-color: #f4f4f9;
-            color: #333;
-            max-width: 700px;
-            margin: 50px auto;
-            padding: 2em;
-            border-radius: 10px;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
-            line-height: 1.6;
+            font-family: var(--font-body);
+            background-color: transparent; /* Makes background see-through */
+            color: var(--light-outline);
+            margin: 0;
+            padding: 1.5rem;
         }
-        h1 {
-            color: #1a1a1a;
-            text-align: center;
+
+        .app-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 2rem;
         }
-        .form-group {
-            margin-bottom: 1.5em;
+
+        .form-column {
+            flex: 2;
+            min-width: 300px;
         }
+
+        .repository-column {
+            flex: 1;
+            min-width: 300px;
+        }
+
+        /* --- Form Elements --- */
+        .input-group {
+            margin-bottom: 1.5rem;
+        }
+
         label {
             display: block;
-            margin-bottom: 0.5em;
-            font-weight: bold;
+            margin-bottom: 0.75rem;
+            font-weight: 500;
+            font-size: 1.2rem;
+            font-family: var(--font-display);
         }
-        input[type="text"] {
+
+        .form-input {
             width: 100%;
-            padding: 0.8em;
-            border: 1px solid #ccc;
-            border-radius: 5px;
-            box-sizing: border-box;
+            padding: 12px 15px;
+            border: 2px solid var(--light-outline); /* White outline */
+            background-color: var(--dark-background); /* Black background */
+            color: var(--light-outline); /* White text */
+            border-radius: 8px;
+            font-family: var(--font-display); /* Using Roboto Mono */
+            font-size: 1.1rem;
+            transition: all 0.3s ease;
+            box-sizing: border-box; 
         }
-        button {
-            display: block;
-            width: 100%;
-            padding: 1em;
-            background-color: #007bff;
-            color: white;
-            border: none;
-            border-radius: 5px;
-            font-size: 1em;
-            cursor: pointer;
-            transition: background-color 0.2s;
+
+        .form-input::placeholder {
+            color: #aaa;
+            font-family: var(--font-display);
         }
-        button:disabled {
-            background-color: #a0c7ff;
-            cursor: not-allowed;
+
+        .form-input:focus {
+            outline: none;
+            border-color: var(--primary-glow-color);
+            box-shadow: 0 0 0 3px rgba(0, 170, 255, 0.35);
         }
-        button:hover:not(:disabled) {
-            background-color: #0056b3;
+
+        textarea.form-input {
+            min-height: 120px;
+            resize: vertical;
         }
-        #status {
-            margin-top: 1.5em;
-            padding: 1em;
-            background-color: #e9ecef;
-            border-radius: 5px;
+
+        /* --- File Drop Area --- */
+        .file-drop-area {
+            margin-top: 1rem;
+            border: 2px dashed var(--light-outline);
+            border-radius: 8px;
+            padding: 2rem;
             text-align: center;
+            font-family: var(--font-display);
+            font-size: 1.1rem;
+            color: #aaa;
+            transition: background-color 0.3s ease;
         }
-        #audioPlayer {
+        
+        .file-drop-area:hover {
+            background-color: rgba(255, 255, 255, 0.05);
+            cursor: pointer;
+        }
+
+        /* --- Custom Status Bar/Progress Bar --- */
+        #status-container {
             width: 100%;
-            margin-top: 1.5em;
+            background-color: var(--dark-background);
+            border: 2px solid var(--light-outline);
+            border-radius: 10px;
+            margin-top: 1.5rem;
+            padding: 5px;
+            box-sizing: border-box;
+            display: none; /* Hidden by default */
         }
+
+        #progress-bar {
+            width: 0%; /* Starts at 0 */
+            height: 30px;
+            background: linear-gradient(90deg, #007bff, var(--primary-glow-color));
+            border-radius: 5px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--white);
+            font-family: var(--font-body);
+            font-weight: 700;
+            white-space: nowrap;
+            overflow: hidden;
+            transition: width 0.5s ease-in-out;
+        }
+
+        .generate-btn {
+            background-color: var(--light-outline);
+            color: var(--dark-background);
+            border: none;
+            padding: 12px 25px;
+            border-radius: 8px;
+            font-size: 1.1rem;
+            font-family: var(--font-display);
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            width: 100%;
+            margin-top: 1rem;
+        }
+
+        .generate-btn:hover {
+            background-color: var(--primary-glow-color);
+            color: var(--white);
+        }
+
+        /* --- Repository --- */
+        .repository-title {
+            font-size: 1.5rem;
+            font-weight: 500;
+            font-family: var(--font-display);
+            border-bottom: 2px solid var(--light-outline);
+            padding-bottom: 0.5rem;
+            margin-bottom: 1rem;
+        }
+
+        #repository-list {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+         /* Styles for dynamically added repository items */
+        .repository-item {
+            background-color: rgba(255, 255, 255, 0.05); /* Slightly transparent white */
+            border-radius: 8px;
+            padding: 1rem;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+        
+        .repository-item-artwork {
+            width: 80px;
+            height: 80px;
+            background-color: #333;
+            border-radius: 6px;
+            flex-shrink: 0;
+        }
+
+        .repository-item-details {
+            flex-grow: 1;
+        }
+        
+        .repository-item-title {
+            font-weight: 500;
+            font-family: var(--font-display);
+            margin: 0 0 0.5rem 0;
+        }
+
     </style>
 </head>
 <body>
 
-    <h1>TESS - AI Podcast Generator</h1>
+    <div class="app-container">
+        <div class="form-column">
+            <div class="input-group">
+                <label for="topic">Topic</label>
+                <input type="text" id="topic" class="form-input" placeholder="Give your show a title...">
+            </div>
 
-    <div class="form-group">
-        <label for="topicInput">Topic:</label>
-        <input type="text" id="topicInput" placeholder="e.g., The History of Ancient Rome">
+            <div class="input-group">
+                <label for="context">Context / Main Points</label>
+                <textarea id="context" class="form-input" placeholder="Type your script or ideas here..."></textarea>
+            </div>
+
+            <div class="file-drop-area">
+                Or drag & drop a file here
+            </div>
+            
+            <button onclick="submitJob()" class="generate-btn">Create My Podcast</button>
+
+            <div id="status-container">
+                <div id="progress-bar"></div>
+            </div>
+        </div>
+
+        <div class="repository-column">
+            <h2 class="repository-title">Generated Podcasts</h2>
+            <div id="repository-list">
+                </div>
+        </div>
     </div>
-
-    <div class="form-group">
-        <label for="contextInput">Context:</label>
-        <input type="text" id="contextInput" placeholder="e.g., Focus on the rise and fall of the Republic">
-    </div>
-
-    <button id="generateButton">Generate Podcast</button>
-
-    <div id="status">Enter a topic and context to begin.</div>
-
-    <audio id="audioPlayer" controls style="display: none;"></audio>
 
     <script>
-        // --- CONFIGURATION ---
-        const backendUrl = "https://mosaicdgitial-sonify-191c.onrender.com"; // CORRECTED to the live URL from the logs
-        let pollingInterval;
+        const RENDER_API_URL = "https://mosaicdgitial-sonify-ws.onrender.com"; // Use your actual Render web service URL
 
-        // --- GET REFERENCES TO HTML ELEMENTS ---
-        const generateButton = document.getElementById('generateButton');
-        const topicInput = document.getElementById('topicInput');
-        const contextInput = document.getElementById('contextInput');
-        const statusDiv = document.getElementById('status');
-        const audioPlayer = document.getElementById('audioPlayer');
+        function updateStatus(message, percentage) {
+            const statusContainer = document.getElementById('status-container');
+            const progressBar = document.getElementById('progress-bar');
 
-        // --- EVENT LISTENER ---
-        generateButton.addEventListener('click', async () => {
-            const topic = topicInput.value;
-            const context = contextInput.value;
+            statusContainer.style.display = 'block';
+            progressBar.textContent = message;
+            progressBar.style.width = percentage + '%';
+        }
+
+        function submitJob() {
+            const topic = document.getElementById('topic').value;
+            const context = document.getElementById('context').value;
+            const duration = "5 minutes"; 
 
             if (!topic || !context) {
-                statusDiv.textContent = "Please fill out all fields.";
+                updateStatus('Please fill out topic and context!', 100);
+                document.getElementById('progress-bar').style.background = 'linear-gradient(90deg, #ff416c, #ff4b2b)';
                 return;
             }
+            
+            document.getElementById('progress-bar').style.background = 'linear-gradient(90deg, #007bff, var(--primary-glow-color))';
+            updateStatus('Submitting job...', 20);
 
-            // --- UI UPDATES ---
-            generateButton.disabled = true;
-            statusDiv.textContent = "Submitting your request...";
-            audioPlayer.style.display = 'none';
-            if (pollingInterval) {
-                clearInterval(pollingInterval);
-            }
-
-            // --- API CALL ---
-            try {
-                const response = await fetch(backendUrl + "/generate-from-idea", {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ topic, context, duration: "5 minutes" })
-                });
-
-                if (!response.ok) {
-                    throw new Error(`Server responded with status: ${response.status}`);
+            fetch(`${RENDER_API_URL}/generate-from-idea`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ topic, context, duration })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.job_id) {
+                    updateStatus(`Job Queued: ${data.job_id}. Processing...`, 40);
+                    pollForStatus(data.job_id);
+                } else {
+                     updateStatus('Error: ' + (data.error || 'Unknown'), 100);
+                     document.getElementById('progress-bar').style.background = 'linear-gradient(90deg, #ff416c, #ff4b2b)';
                 }
-                
-                const responseData = await response.json();
-                statusDiv.textContent = "Job submitted! Now processing...";
-                startPolling(responseData.job_id);
+            })
+            .catch(err => {
+                console.error('Error submitting job:', err);
+                updateStatus('Error: ' + err.message, 100);
+                document.getElementById('progress-bar').style.background = 'linear-gradient(90deg, #ff416c, #ff4b2b)';
+            });
+        }
 
-            } catch (error) {
-                statusDiv.textContent = "A fatal error occurred. Could not connect to the backend.";
-                generateButton.disabled = false;
-                console.error("Error submitting job:", error);
-            }
-        });
+        function pollForStatus(jobId) {
+            const interval = setInterval(() => {
+                fetch(`${RENDER_API_URL}/podcast-status/${jobId}`)
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.status === 'processing') {
+                            updateStatus('Status: Processing...', 60);
+                        } else if (data.status === 'complete') {
+                            clearInterval(interval);
+                            updateStatus('Job Complete!', 100);
+                            addPodcastToRepository(data);
+                            setTimeout(() => { 
+                                document.getElementById('status-container').style.display = 'none';
+                            }, 5000);
+                        } else if (data.status === 'failed') {
+                            clearInterval(interval);
+                            updateStatus(`Failed: ${data.error_message}`, 100);
+                            document.getElementById('progress-bar').style.background = 'linear-gradient(90deg, #ff416c, #ff4b2b)';
+                        }
+                    })
+                    .catch(err => {
+                        clearInterval(interval);
+                        console.error('Error polling status:', err);
+                        updateStatus('Error checking status.', 100);
+                        document.getElementById('progress-bar').style.background = 'linear-gradient(90deg, #ff416c, #ff4b2b)';
+                    });
+            }, 5000);
+        }
+        
+        function addPodcastToRepository(data) {
+            const repositoryList = document.getElementById('repository-list');
 
-        // --- POLLING FUNCTION ---
-        function startPolling(jobId) {
-            pollingInterval = setInterval(async () => {
-                try {
-                    const response = await fetch(`${backendUrl}/podcast-status/${jobId}`);
-                    
-                    if (!response.ok) {
-                        throw new Error(`Server responded with status: ${response.status}`);
-                    }
+            const item = document.createElement('div');
+            item.className = 'repository-item';
 
-                    const statusData = await response.json();
-                    statusDiv.textContent = `Status: ${statusData.status}...`;
+            const artwork = document.createElement('div');
+            artwork.className = 'repository-item-artwork';
 
-                    if (statusData.status === 'complete') {
-                        clearInterval(pollingInterval);
-                        statusDiv.textContent = "Your podcast is ready!";
-                        audioPlayer.src = statusData.podcast_url;
-                        audioPlayer.style.display = 'block';
-                        generateButton.disabled = false;
-                    } else if (statusData.status === 'failed') {
-                        clearInterval(pollingInterval);
-                        statusDiv.textContent = `Job failed: ${statusData.error_message || 'Unknown error'}`;
-                        generateButton.disabled = false;
-                    }
-                } catch (error) {
-                    console.error("Polling error:", error);
-                    clearInterval(pollingInterval);
-                    statusDiv.textContent = "Error checking job status.";
-                    generateButton.disabled = false;
-                }
-            }, 5000); // Check every 5 seconds
+            const details = document.createElement('div');
+            details.className = 'repository-item-details';
+
+            const title = document.createElement('p');
+            title.className = 'repository-item-title';
+            title.textContent = data.topic || 'Untitled Podcast';
+            
+            const audio = document.createElement('audio');
+            audio.controls = true;
+            audio.src = data.podcast_url;
+            audio.style.width = '100%';
+
+            details.appendChild(title);
+            details.appendChild(audio);
+            item.appendChild(artwork);
+            item.appendChild(details);
+
+            repositoryList.prepend(item);
         }
     </script>
-
 </body>
 </html>
