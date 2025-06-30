@@ -88,7 +88,7 @@
 
     <script>
         // --- CONFIGURATION ---
-        const backendUrl = "https://5fe9-47-199-148-205.ngrok-free.app"; // Make sure this matches your current ngrok URL!
+        const backendUrl = "https://mosaicdgitial-sonify-ws.onrender.com"; // This points to your LIVE Render backend
         let pollingInterval;
 
         // --- GET REFERENCES TO HTML ELEMENTS ---
@@ -112,6 +112,9 @@
             generateButton.disabled = true;
             statusDiv.textContent = "Submitting your request...";
             audioPlayer.style.display = 'none';
+            if (pollingInterval) {
+                clearInterval(pollingInterval);
+            }
 
             // --- API CALL ---
             try {
@@ -157,7 +160,7 @@
                         generateButton.disabled = false;
                     } else if (statusData.status === 'failed') {
                         clearInterval(pollingInterval);
-                        statusDiv.textContent = `Job failed: ${statusData.error_message}`;
+                        statusDiv.textContent = `Job failed: ${statusData.error_message || 'Unknown error'}`;
                         generateButton.disabled = false;
                     }
                 } catch (error) {
