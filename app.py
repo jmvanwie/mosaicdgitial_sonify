@@ -1,4 +1,4 @@
-# app.py - Final Production Version with Automatic Credential Fix
+# app.py - Final Production Version
 
 import os
 import uuid
@@ -6,7 +6,8 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 from celery import Celery
 import firebase_admin
-from firebase_admin import credentials as firebase_credentials, firestore, storage
+from firebase_admin import credentials, firestore, storage
+from PyPDF2 import PdfReader
 from google.cloud import texttospeech
 import google.generativeai as genai
 
@@ -34,17 +35,16 @@ def initialize_services():
     """Initializes all external services using environment variables."""
     global db, bucket, tts_client, genai_model
 
-    # --- THE CORE FIX: Use Application Default Credentials for all services ---
-    # Render automatically sets the GOOGLE_APPLICATION_CREDENTIALS environment
-    # variable when you upload a secret file. The Google client libraries are
-    # smart enough to find and use this variable automatically if we don't
-    # pass any explicit credentials. This is the standard cloud practice.
+    # --- THE CORE FIX: Use Application Default Credentials ---
+    # The Google libraries will automatically find and use the file specified
+    # in the GOOGLE_APPLICATION_CREDENTIALS environment variable we just set.
 
     if not firebase_admin._apps:
         try:
             print("Attempting to initialize Firebase using Application Default Credentials...")
             
-            # This call with no arguments tells Firebase to find credentials in the environment
+            # This simplified call now works because of the new environment variable.
+            # It tells Firebase to find credentials in the environment.
             firebase_admin.initialize_app() 
 
             db = firestore.client()
