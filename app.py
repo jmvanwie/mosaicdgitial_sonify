@@ -17,11 +17,11 @@ app = Flask(__name__)
 # This list tells your backend that it's safe to accept requests
 # from these specific web addresses.
 origins = [
-    "https://vermillion-otter-bfe24a.netlify.app", # Your Netlify frontend
-    "https://euphonious-sopapillas-66b86f.netlify.app", # Your other Netlify frontend
-    "https://www.mosaicdigital.ai",                     # Your main Wix domain
-    "http://localhost:8000",                            # For local testing
-    "http://127.0.0.1:5500"                            # For local testing
+    "https://vermillion-otter-bfe24a.netlify.app",
+    "https://statuesque-tiramisu-4b5936.netlify.app",
+    "https://www.mosaicdigital.ai",
+    "http://localhost:8000",
+    "http://127.0.0.1:5500"
 ]
 CORS(app, resources={r"/*": {"origins": origins}})
 
