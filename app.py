@@ -1,47 +1,62 @@
-# app.py - DEBUGGING VERSION
+# app.py - Final Production Version with Credential Fix
 
 import os
 import uuid
 from flask import Flask, request, jsonify
-from flask_cors import CORS  # Make sure this is imported
+from flask_cors import CORS
 from celery import Celery
 import firebase_admin
-from firebase_admin import credentials, firestore, storage
-from PyPDF2 import PdfReader
+from firebase_admin import credentials as firebase_credentials, firestore, storage
 from google.cloud import texttospeech
+from google.oauth2 import service_account
 import google.generativeai as genai
 
 # --- App & CORS Configuration ---
 app = Flask(__name__)
 
-# --- TEMPORARY DEBUGGING STEP ---
-# This line allows requests from ANY origin. It's not secure for long-term
-# production, but it will definitively solve any CORS error for our test.
-CORS(app)
+# This list tells your backend that it's safe to accept requests
+# from these specific web addresses.
+origins = [
+    "https://vermillion-otter-bfe24a.netlify.app",
+    "https://statuesque-tiramisu-4b5936.netlify.app",
+    "https://www.mosaicdigital.ai",
+    "http://localhost:8000",
+    "http://127.0.0.1:5500"
+]
+CORS(app, resources={r"/*": {"origins": origins}})
 
-# --- Firebase & Google AI Initialization ---
+# --- Service Initialization Globals ---
 db = None
 bucket = None
 tts_client = None
 genai_model = None
+google_creds = None # Global for Google credentials
 
 def initialize_services():
     """Initializes all external services using environment variables."""
-    global db, bucket, tts_client, genai_model
+    global db, bucket, tts_client, genai_model, google_creds
+
+    # --- THE CORE FIX: Load credentials ONCE ---
+    if google_creds is None:
+        try:
+            print("Loading Google Service Account credentials...")
+            cred_path = os.environ.get('GOOGLE_APPLICATION_CREDENTIALS', 'firebase_service_account.json')
+            if not os.path.exists(cred_path):
+                 raise FileNotFoundError(f"Service account key not found at path: {cred_path}.")
+            google_creds = service_account.Credentials.from_service_account_file(cred_path)
+            print("Google credentials loaded successfully.")
+        except Exception as e:
+            print(f"FATAL: Could not load Google credentials: {e}")
+            raise e
 
     if not firebase_admin._apps:
         try:
             print("Attempting to initialize Firebase...")
-            cred_path = os.environ.get('GOOGLE_APPLICATION_CREDENTIALS', 'firebase_service_account.json')
-            if not os.path.exists(cred_path):
-                 raise FileNotFoundError(f"Service account key not found at path: {cred_path}. Ensure the secret file is correctly configured in Render.")
-
-            cred = credentials.Certificate(cred_path)
+            firebase_cred = firebase_credentials.Certificate(google_creds)
             storage_bucket_url = os.environ.get('FIREBASE_STORAGE_BUCKET')
             if not storage_bucket_url:
                 raise ValueError("FIREBASE_STORAGE_BUCKET environment variable not set.")
-
-            firebase_admin.initialize_app(cred, {'storageBucket': storage_bucket_url})
+            firebase_admin.initialize_app(firebase_cred, {'storageBucket': storage_bucket_url})
             db = firestore.client()
             bucket = storage.bucket()
             print("Successfully connected to Firebase.")
@@ -52,7 +67,8 @@ def initialize_services():
     if tts_client is None:
         try:
             print("Initializing Google Cloud Text-to-Speech client...")
-            tts_client = texttospeech.TextToSpeechClient()
+            # Explicitly pass the loaded credentials to the TTS client
+            tts_client = texttospeech.TextToSpeechClient(credentials=google_creds)
             print("Text-to-Speech client initialized.")
         except Exception as e:
             print(f"FATAL: Could not initialize TTS client: {e}")
@@ -93,13 +109,11 @@ celery = make_celery(app)
 
 # --- Core Logic Functions (abbreviated for clarity, no changes needed here) ---
 def generate_script_from_idea(topic, context, duration):
-    # (Existing function code)
     prompt = (f"You are a podcast scriptwriter. Write a script about {topic} with the context: {context}.")
     response = genai_model.generate_content(prompt)
     return response.text
 
 def generate_podcast_audio(text_content, output_filepath):
-    # (Existing function code)
     synthesis_input = texttospeech.SynthesisInput(text=text_content)
     voice = texttospeech.VoiceSelectionParams(language_code="en-US", ssml_gender=texttospeech.SsmlVoiceGender.NEUTRAL)
     audio_config = texttospeech.AudioConfig(audio_encoding=texttospeech.AudioEncoding.MP3)
@@ -109,7 +123,6 @@ def generate_podcast_audio(text_content, output_filepath):
     return True
 
 def _finalize_job(job_id, local_audio_path, generated_script=None):
-    # (Existing function code)
     storage_path = f"podcasts/{job_id}.mp3"
     blob = bucket.blob(storage_path)
     blob.upload_from_filename(local_audio_path)
@@ -122,7 +135,7 @@ def _finalize_job(job_id, local_audio_path, generated_script=None):
     db.collection('podcasts').document(job_id).update(update_data)
     return {"status": "Complete", "podcast_url": podcast_url}
 
-# --- Celery Task Definitions (abbreviated for clarity, no changes needed here) ---
+# --- Celery Task Definitions ---
 @celery.task
 def generate_podcast_from_idea_task(job_id, topic, context, duration):
     doc_ref = db.collection('podcasts').document(job_id)
@@ -143,12 +156,6 @@ def generate_podcast_from_idea_task(job_id, topic, context, duration):
 def before_first_request_func():
     initialize_services()
 
-# --- NEW DEBUGGING ENDPOINT ---
-@app.route("/version")
-def get_version():
-    """A simple endpoint to verify which version of the code is live."""
-    return jsonify({"version": "1.3 - Final Debug"})
-
 @app.route("/generate-from-idea", methods=["POST"])
 def handle_idea_generation():
     data = request.get_json()
@@ -159,7 +166,6 @@ def handle_idea_generation():
     generate_podcast_from_idea_task.delay(
         job_id, data['topic'], data['context'], data.get('duration', '5 minutes')
     )
-    print(f"API: Queued IDEA job {job_id}")
     return jsonify({"message": "Podcast generation from idea has been queued!", "job_id": job_id}), 202
 
 @app.route("/podcast-status/<job_id>", methods=["GET"])
@@ -171,7 +177,6 @@ def get_podcast_status(job_id):
             return jsonify({"error": "Job not found"}), 404
         return jsonify(doc.to_dict()), 200
     except Exception as e:
-        print(f"Error getting status for job {job_id}: {e}")
         return jsonify({"error": f"An error occurred: {e}"}), 500
 
 if __name__ == '__main__':
