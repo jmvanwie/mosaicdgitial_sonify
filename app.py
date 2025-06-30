@@ -1,4 +1,4 @@
-# app.py - Final Production Version with Credential Fix
+# app.py - Final Production Version with Automatic Credential Fix
 
 import os
 import uuid
@@ -8,7 +8,6 @@ from celery import Celery
 import firebase_admin
 from firebase_admin import credentials as firebase_credentials, firestore, storage
 from google.cloud import texttospeech
-# from google.oauth2 import service_account # No longer needed for manual loading
 import google.generativeai as genai
 
 # --- App & CORS Configuration ---
@@ -30,33 +29,26 @@ db = None
 bucket = None
 tts_client = None
 genai_model = None
-# google_creds is no longer needed
 
 def initialize_services():
     """Initializes all external services using environment variables."""
     global db, bucket, tts_client, genai_model
 
-    # --- THE CORE FIX: Use Application Default Credentials ---
+    # --- THE CORE FIX: Use Application Default Credentials for all services ---
     # Render automatically sets the GOOGLE_APPLICATION_CREDENTIALS environment
-    # variable when you upload a secret file. The Google libraries find this
-    # automatically, so we don't need to load the file manually.
+    # variable when you upload a secret file. The Google client libraries are
+    # smart enough to find and use this variable automatically if we don't
+    # pass any explicit credentials. This is the standard cloud practice.
 
     if not firebase_admin._apps:
         try:
-            print("Attempting to initialize Firebase...")
-            # Use Application Default Credentials
-            cred = firebase_credentials.ApplicationDefault()
+            print("Attempting to initialize Firebase using Application Default Credentials...")
             
-            storage_bucket_url = os.environ.get('FIREBASE_STORAGE_BUCKET')
-            if not storage_bucket_url:
-                raise ValueError("FIREBASE_STORAGE_BUCKET environment variable not set.")
+            # This call with no arguments tells Firebase to find credentials in the environment
+            firebase_admin.initialize_app() 
 
-            firebase_admin.initialize_app(cred, {
-                'storageBucket': storage_bucket_url,
-                'projectId': os.environ.get('FIREBASE_PROJECT_ID') # Good practice to be explicit
-            })
             db = firestore.client()
-            bucket = storage.bucket()
+            bucket = storage.bucket(os.environ.get('FIREBASE_STORAGE_BUCKET'))
             print("Successfully connected to Firebase.")
         except Exception as e:
             print(f"FATAL: Could not connect to Firebase: {e}")
