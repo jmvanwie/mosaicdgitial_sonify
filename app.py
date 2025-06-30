@@ -20,6 +20,7 @@ origins = [
     "https://vermillion-otter-bfe24a.netlify.app",
     "https://statuesque-tiramisu-4b5936.netlify.app",
     "https://coruscating-hotteok-a5fb56.netlify.app",
+    "https://superlative-starship-988545.netlify.app/",
     "https://www.mosaicdigital.ai",
     "http://localhost:8000",
     "http://127.0.0.1:5500"
