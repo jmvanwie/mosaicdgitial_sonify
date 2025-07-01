@@ -17,12 +17,10 @@ app = Flask(__name__)
 # This list tells your backend that it's safe to accept requests
 # from these specific web addresses.
 origins = [
-    "https://vermillion-otter-bfe24a.netlify.app",
-    "https://statuesque-tiramisu-4b5936.netlify.app",
-    "https://coruscating-hotteok-a5fb56.netlify.app",
     "https://www.mosaicdigital.ai",
     "http://localhost:8000",
-    "http://127.0.0.1:5500"
+    "http://127.0.0.1:5500",
+    re.compile(r"https://.*\.netlify\.app"), # Allow all netlify subdomains
 ]
 CORS(app, resources={r"/*": {"origins": origins}})
 
@@ -108,14 +106,32 @@ def generate_script_from_idea(topic, context, duration):
     print("AI script generated successfully.")
     return response.text
 
-def generate_podcast_audio(text_content, output_filepath):
-    print(f"Generating audio for text (first 100 chars): {text_content[:100]}...")
-    synthesis_input = texttospeech.SynthesisInput(text=text_content)
-    voice = texttospeech.VoiceSelectionParams(language_code="en-US", ssml_gender=texttospeech.SsmlVoiceGender.NEUTRAL)
+ddef generate_podcast_audio(text_content, output_filepath, voice_names=['en-US-Wavenet-A', 'en-US-Wavenet-B']):
+    """
+    Generates podcast audio from text content using specified voices.
+    Alternates voices for each paragraph.
+    """
+    print(f"Generating audio with voices: {voice_names}")
+
+    # Split the script into paragraphs
+    paragraphs = [p.strip() for p in text_content.split('\n') if p.strip()]
+    
+    # Construct the SSML content
+    ssml_content = '<speak>'
+    for i, paragraph in enumerate(paragraphs):
+        voice_name = voice_names[i % len(voice_names)]
+        ssml_content += f'<voice name="{voice_name}">{paragraph}</voice>'
+    ssml_content += '</speak>'
+
+    synthesis_input = texttospeech.SynthesisInput(ssml=ssml_content)
     audio_config = texttospeech.AudioConfig(audio_encoding=texttospeech.AudioEncoding.MP3)
-    response = tts_client.synthesize_speech(input=synthesis_input, voice=voice, audio_config=audio_config)
+    
+    # The voice parameter in synthesize_speech is ignored when using SSML with voice tags
+    response = tts_client.synthesize_speech(input=synthesis_input, audio_config=audio_config)
+    
     with open(output_filepath, "wb") as out:
         out.write(response.audio_content)
+    
     print(f"Audio content written to file '{output_filepath}'")
     return True
 
@@ -143,15 +159,19 @@ def _finalize_job(job_id, local_audio_path, generated_script=None):
 
 # --- Celery Task Definitions ---
 @celery.task
-def generate_podcast_from_idea_task(job_id, topic, context, duration):
-    print(f"WORKER: Started IDEA job {job_id} for topic: {topic}")
+def generate_podcast_from_idea_task(job_id, topic, context, duration, voices):
+    print(f"WORKER: Started IDEA job {job_id} for topic: {topic} with voices: {voices}")
     doc_ref = db.collection('podcasts').document(job_id)
     output_filepath = f"{job_id}.mp3"
     try:
-        doc_ref.set({'topic': topic, 'context': context, 'source_type': 'idea', 'duration': duration, 'status': 'processing', 'created_at': firestore.SERVER_TIMESTAMP})
+        doc_ref.set({'topic': topic, 'context': context, 'source_type': 'idea', 'duration': duration, 'status': 'processing', 'created_at': firestore.SERVER_TIMESTAMP, 'voices': voices})
         podcast_script = generate_script_from_idea(topic, context, duration)
         if not podcast_script: raise Exception("Script generation failed.")
-        if not generate_podcast_audio(podcast_script, output_filepath): raise Exception("Audio generation failed.")
+        
+        # Pass the voices to the audio generation function
+        if not generate_podcast_audio(podcast_script, output_filepath, voices): 
+            raise Exception("Audio generation failed.")
+            
         return _finalize_job(job_id, output_filepath, generated_script=podcast_script)
     except Exception as e:
         print(f"ERROR in Celery task {job_id}: {e}")
@@ -171,8 +191,15 @@ def handle_idea_generation():
         return jsonify({"error": "topic and context are required"}), 400
     
     job_id = str(uuid.uuid4())
+    # Pass the voices from the request, with a default
+    voices = data.get('voices', ['en-US-Wavenet-A', 'en-US-Wavenet-B'])
+    
     generate_podcast_from_idea_task.delay(
-        job_id, data['topic'], data['context'], data.get('duration', '5 minutes')
+        job_id, 
+        data['topic'], 
+        data['context'], 
+        data.get('duration', '5 minutes'),
+        voices
     )
     return jsonify({"message": "Podcast generation from idea has been queued!", "job_id": job_id}), 202
 
