@@ -111,15 +111,20 @@ def clean_script_for_tts(script_text):
 
 def generate_script_from_idea(topic, context, duration):
     print(f"Generating AI script for topic: {topic}")
-    # IMPROVED PROMPT: More explicit instructions to get cleaner output.
-    prompt = (f"You are a professional podcast scriptwriter. Your task is to write a compelling and engaging podcast script for two charismatic AI hosts. "
-              f"The script should be approximately {duration} in length. The topic of the podcast is: '{topic}'. "
-              f"Here is some additional context: '{context}'. "
-              f"IMPORTANT INSTRUCTIONS: "
-              f"1. Write the dialogue in a natural, conversational, and engaging tone. Avoid sounding robotic. "
-              f"2. Provide ONLY the dialogue to be spoken. Do NOT include speaker labels (like 'AI Voice 1:'). "
-              f"3. Do NOT include sound effect descriptions or stage directions. "
-              f"4. Separate each speaker's part with a pipe character ('|'). For example: 'Hello, welcome to the show.|Thanks, it's great to be here.'")
+    # ENHANCED PROMPT for better performance and formatting
+    prompt = (
+        "You are a scriptwriter for a popular podcast. Your task is to write a script for two AI hosts who are witty, charismatic, and engaging. "
+        "The dialogue should feel natural, conversational, and have a good back-and-forth flow. Avoid a robotic or overly formal tone. "
+        f"The topic is: '{topic}'. "
+        f"Additional context: '{context}'. "
+        f"The podcast should be approximately {duration} long. "
+        "--- \n"
+        "IMPORTANT FORMATTING RULES: \n"
+        "1.  Provide ONLY the dialogue. Do NOT include speaker labels (e.g., 'Host 1:'). \n"
+        "2.  Do NOT include any stage directions or sound effect descriptions (e.g., '(laughs)', '**upbeat music**'). \n"
+        "3.  You MUST separate each speaker's part with a pipe character ('|'). The entire script should be a single line of text with parts separated by '|'. \n"
+        "4.  EXAMPLE: 'Welcome back to the AI Insights podcast! We have a fascinating topic today.|I'm really excited for this one. We're diving deep into the world of quantum computing.|It sounds complex, but we'll break it down for everyone.|Exactly. So, to start, what exactly is a qubit?'"
+    )
     response = genai_model.generate_content(prompt)
     print("AI script generated successfully.")
     return response.text
@@ -130,7 +135,7 @@ def generate_podcast_audio(text_content, output_filepath, voice_names=['en-US-Wa
     stitching them together. This is a robust method that avoids complex SSML issues.
     """
     print(f"Generating audio in chunks for voices: {voice_names}")
-    # FIX: Split the script by the pipe delimiter for reliable speaker separation.
+    # Split the script by the pipe delimiter for reliable speaker separation.
     paragraphs = [p.strip() for p in text_content.split('|') if p.strip()]
     
     if not paragraphs:
