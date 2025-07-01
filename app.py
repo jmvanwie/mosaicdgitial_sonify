@@ -106,7 +106,7 @@ def generate_script_from_idea(topic, context, duration):
     print("AI script generated successfully.")
     return response.text
 
-ddef generate_podcast_audio(text_content, output_filepath, voice_names=['en-US-Wavenet-A', 'en-US-Wavenet-B']):
+def generate_podcast_audio(text_content, output_filepath, voice_names=['en-US-Wavenet-A', 'en-US-Wavenet-B']):
     """
     Generates podcast audio from text content using specified voices.
     Alternates voices for each paragraph.
@@ -119,8 +119,10 @@ ddef generate_podcast_audio(text_content, output_filepath, voice_names=['en-US-W
     # Construct the SSML content
     ssml_content = '<speak>'
     for i, paragraph in enumerate(paragraphs):
+        # Sanitize paragraph for SSML
+        sanitized_paragraph = paragraph.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
         voice_name = voice_names[i % len(voice_names)]
-        ssml_content += f'<voice name="{voice_name}">{paragraph}</voice>'
+        ssml_content += f'<voice name="{voice_name}">{sanitized_paragraph}</voice>'
     ssml_content += '</speak>'
 
     synthesis_input = texttospeech.SynthesisInput(ssml=ssml_content)
