@@ -190,6 +190,9 @@ def generate_podcast_from_idea_task(job_id, topic, context, duration, voices):
     doc_ref = db.collection('podcasts').document(job_id)
     output_filepath = f"{job_id}.mp3"
     try:
+        # FIX: Create the document in Firestore immediately so it can be updated later.
+        doc_ref.set({'topic': topic, 'context': context, 'source_type': 'idea', 'duration': duration, 'status': 'processing', 'created_at': firestore.SERVER_TIMESTAMP, 'voices': voices})
+        
         # Generate the original script
         original_script = generate_script_from_idea(topic, context, duration)
         if not original_script: raise Exception("Script generation failed.")
