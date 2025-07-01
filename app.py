@@ -150,8 +150,8 @@ def generate_podcast_audio(text_content, output_filepath, voice_names=['en-US-Wa
         # Sanitize the paragraph for SSML
         sanitized_paragraph = paragraph.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
 
-        # Use SSML to add natural inflection and a conversational tone
-        ssml_text = f'<speak><prosody rate="medium" pitch="0st">{sanitized_paragraph}</prosody></speak>'
+        # Use SSML to add natural inflection, removing the unsupported 'pitch' attribute for Studio voices.
+        ssml_text = f'<speak><prosody rate="medium">{sanitized_paragraph}</prosody></speak>'
 
         synthesis_input = texttospeech.SynthesisInput(ssml=ssml_text)
 
