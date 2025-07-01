@@ -95,33 +95,33 @@ celery = make_celery(app)
 # --- Core Logic Functions ---
 def generate_script_from_idea(topic, context, duration):
     print(f"Generating AI script for topic: {topic}")
-    # ENHANCED PROMPT for better performance and formatting
+    # ENHANCED PROMPT for named hosts and better formatting
     prompt = (
-        "You are a scriptwriter for a popular podcast. Your task is to write a script for two AI hosts, SPEAKER_1 (male) and SPEAKER_2 (female). "
+        "You are a scriptwriter for a popular podcast. Your task is to write a script for two AI hosts, Justin (male) and Naomi (female). "
         "The hosts are witty, charismatic, and engaging. The dialogue should feel natural, warm, and have a good back-and-forth conversational flow. "
         f"The topic is: '{topic}'. "
         f"Additional context: '{context}'. "
         f"The podcast should be approximately {duration} long. "
         "--- \n"
         "IMPORTANT INSTRUCTIONS: \n"
-        "1.  Start each line with the speaker's tag, either '[SPEAKER_1]' or '[SPEAKER_2]'. \n"
+        "1.  Start each line with the speaker's tag, either '[Justin]' or '[Naomi]'. \n"
         "2.  Alternate speakers for each line of dialogue. \n"
         "3.  Do NOT include any other text, directions, or formatting. \n"
         "4.  EXAMPLE: \n"
-        "[SPEAKER_1] Welcome back to AI Insights! Today, we're tackling a huge topic: quantum computing. \n"
-        "[SPEAKER_2] It sounds intimidating, but I promise we'll make it fun. Ready to dive in? \n"
-        "[SPEAKER_1] Absolutely. So, at its core, what makes a quantum computer different from the one on your desk?"
+        "[Justin] Welcome back to AI Insights! Today, we're tackling a huge topic: quantum computing. \n"
+        "[Naomi] It sounds intimidating, but I promise we'll make it fun. Ready to dive in? \n"
+        "[Justin] Absolutely. So, at its core, what makes a quantum computer different from the one on your desk?"
     )
     response = genai_model.generate_content(prompt)
     print("AI script generated successfully.")
     return response.text
 
 def parse_script(script_text):
-    """Parses a script with speaker tags into a list of (speaker, dialogue) tuples."""
+    """Parses a script with named speaker tags into a list of (speaker, dialogue) tuples."""
     print("Parsing script...")
     dialogue_parts = []
-    # Regex to find speaker tags and the text that follows
-    pattern = re.compile(r'(\[SPEAKER_[12]\])\s*(.*)')
+    # Regex to find named speaker tags and the text that follows
+    pattern = re.compile(r'(\[(?:Justin|Naomi)\])\s*(.*)')
     for line in script_text.split('\n'):
         match = pattern.match(line.strip())
         if match:
@@ -143,8 +143,8 @@ def generate_podcast_audio(script_text, output_filepath, voice_names):
 
     # Map speaker tags to the provided voice names
     voice_map = {
-        '[SPEAKER_1]': voice_names[0],
-        '[SPEAKER_2]': voice_names[1]
+        '[Justin]': voice_names[0],
+        '[Naomi]': voice_names[1]
     }
 
     combined_audio = AudioSegment.empty()
@@ -157,11 +157,11 @@ def generate_podcast_audio(script_text, output_filepath, voice_names):
 
         print(f"Synthesizing dialogue for {speaker_tag} with voice {voice_name}...")
         
-        # FINAL FIX: The Chirp3-HD voices do not support SSML. We must send plain text.
+        # The Chirp3-HD voices do not support SSML. We must send plain text.
         synthesis_input = texttospeech.SynthesisInput(text=dialogue)
 
         voice_params = texttospeech.VoiceSelectionParams(
-            language_code=voice_name.split('-')[0] + '-' + voice_name.split('-')[1], # Extract locale e.g., en-GB
+            language_code=voice_name.split('-')[0] + '-' + voice_name.split('-')[1], # Extract locale e.g., en-US
             name=voice_name
         )
         audio_config = texttospeech.AudioConfig(audio_encoding=texttospeech.AudioEncoding.MP3)
@@ -247,8 +247,8 @@ def handle_idea_generation():
     
     job_id = str(uuid.uuid4())
     
-    # Change default to the new Chirp3-HD voices
-    voices = data.get('voices', ['en-GB-Chirp3-HD-Sadaltager', 'en-US-Chirp3-HD-Callirrhoe'])
+    # Change default to the new named Chirp3-HD voices
+    voices = data.get('voices', ['en-US-Chirp3-HD-Iapetus', 'en-US-Chirp3-HD-Leda'])
     
     generate_podcast_from_idea_task.delay(
         job_id, 
