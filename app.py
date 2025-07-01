@@ -143,8 +143,8 @@ def generate_podcast_audio(script_text, output_filepath, voice_names):
 
     # Map speaker tags to the provided voice names
     voice_map = {
-        '[Justin]': voice_names[0],
-        '[Naomi]': voice_names[1]
+        '[Trystan]': voice_names[0],
+        '[Saylor]': voice_names[1]
     }
 
     combined_audio = AudioSegment.empty()
