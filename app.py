@@ -97,20 +97,20 @@ def generate_script_from_idea(topic, context, duration):
     print(f"Generating AI script for topic: {topic}")
     # ENHANCED PROMPT for named hosts and better formatting
     prompt = (
-        "You are a scriptwriter for a popular podcast. Your task is to write a script for two AI hosts, Justin (male) and Naomi (female). "
+        "You are a scriptwriter for a popular podcast. Your task is to write a script for two AI hosts, Trystan (male) and Saylor (female, pronounced Say-Lor). "
         "The hosts are witty, charismatic, and engaging. The dialogue should feel natural, warm, and have a good back-and-forth conversational flow. "
         f"The topic is: '{topic}'. "
         f"Additional context: '{context}'. "
         f"The podcast should be approximately {duration} long. "
         "--- \n"
         "IMPORTANT INSTRUCTIONS: \n"
-        "1.  Start each line with the speaker's tag, either '[Justin]' or '[Naomi]'. \n"
+        "1.  Start each line with the speaker's tag, either '[Trystan]' or '[Saylor]'. \n"
         "2.  Alternate speakers for each line of dialogue. \n"
         "3.  Do NOT include any other text, directions, or formatting. \n"
         "4.  EXAMPLE: \n"
-        "[Justin] Welcome back to AI Insights! Today, we're tackling a huge topic: quantum computing. \n"
-        "[Naomi] It sounds intimidating, but I promise we'll make it fun. Ready to dive in? \n"
-        "[Justin] Absolutely. So, at its core, what makes a quantum computer different from the one on your desk?"
+        "[Trystan] Welcome back to AI Insights! Today, we're tackling a huge topic: quantum computing. \n"
+        "[Saylor] It sounds intimidating, but I promise we'll make it fun. Ready to dive in? \n"
+        "[Trystan] Absolutely. So, at its core, what makes a quantum computer different from the one on your desk?"
     )
     response = genai_model.generate_content(prompt)
     print("AI script generated successfully.")
@@ -119,14 +119,10 @@ def generate_script_from_idea(topic, context, duration):
 def parse_script(script_text):
     """Parses a script with named speaker tags into a list of (speaker, dialogue) tuples."""
     print("Parsing script...")
-    dialogue_parts = []
-    # Regex to find named speaker tags and the text that follows
-    pattern = re.compile(r'(\[(?:Justin|Naomi)\])\s*(.*)')
-    for line in script_text.split('\n'):
-        match = pattern.match(line.strip())
-        if match:
-            speaker_tag, dialogue = match.groups()
-            dialogue_parts.append((speaker_tag, dialogue.strip()))
+    # This regex now robustly finds the speaker name (Trystan or Saylor) and their dialogue.
+    pattern = re.compile(r'\[(Trystan|Saylor)\]\s*([^\n\[\]]*)')
+    dialogue_parts = pattern.findall(script_text)
+    # The result of findall is already a list of tuples, e.g., [('Trystan', 'Hello...'), ('Saylor', 'Hi there...')].
     print(f"Parsed {len(dialogue_parts)} dialogue parts.")
     return dialogue_parts
 
@@ -141,21 +137,25 @@ def generate_podcast_audio(script_text, output_filepath, voice_names):
     if not dialogue_parts:
         raise ValueError("The script is empty or could not be parsed. Cannot generate audio.")
 
-    # Map speaker tags to the provided voice names
+    # Map speaker names (without brackets) to the provided voice names
     voice_map = {
-        '[Trystan]': voice_names[0],
-        '[Saylor]': voice_names[1]
+        'Trystan': voice_names[0],
+        'Saylor': voice_names[1]
     }
 
     combined_audio = AudioSegment.empty()
     
-    for speaker_tag, dialogue in dialogue_parts:
-        voice_name = voice_map.get(speaker_tag)
-        if not voice_name:
-            print(f"Warning: Skipping dialogue part with unknown speaker tag: {speaker_tag}")
+    for speaker_name, dialogue in dialogue_parts:
+        dialogue = dialogue.strip()
+        if not dialogue:
             continue
 
-        print(f"Synthesizing dialogue for {speaker_tag} with voice {voice_name}...")
+        voice_name = voice_map.get(speaker_name)
+        if not voice_name:
+            print(f"Warning: Skipping dialogue part with unknown speaker name: {speaker_name}")
+            continue
+
+        print(f"Synthesizing dialogue for {speaker_name} with voice {voice_name}...")
         
         # The Chirp3-HD voices do not support SSML. We must send plain text.
         synthesis_input = texttospeech.SynthesisInput(text=dialogue)
@@ -247,7 +247,7 @@ def handle_idea_generation():
     
     job_id = str(uuid.uuid4())
     
-    # Change default to the new named Chirp3-HD voices
+    # Default voices for Trystan and Saylor
     voices = data.get('voices', ['en-US-Chirp3-HD-Iapetus', 'en-US-Chirp3-HD-Leda'])
     
     generate_podcast_from_idea_task.delay(
