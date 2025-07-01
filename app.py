@@ -97,7 +97,7 @@ def generate_script_from_idea(topic, context, duration):
     print(f"Generating AI script for topic: {topic}")
     # ENHANCED PROMPT for named hosts and better formatting
     prompt = (
-        "You are a scriptwriter for a popular podcast. Your task is to write a script for two AI hosts, Trystan (male) and Saylor (female, pronounced Say-Lor). "
+        "You are a scriptwriter for a popular podcast. Your task is to write a script for two AI hosts, Trystan (male) and Saylor (female). "
         "The hosts are witty, charismatic, and engaging. The dialogue should feel natural, warm, and have a good back-and-forth conversational flow. "
         f"The topic is: '{topic}'. "
         f"Additional context: '{context}'. "
@@ -157,8 +157,11 @@ def generate_podcast_audio(script_text, output_filepath, voice_names):
 
         print(f"Synthesizing dialogue for {speaker_name} with voice {voice_name}...")
         
+        # Phonetic workaround for pronunciation since SSML is not supported.
+        phonetic_dialogue = dialogue.replace("Saylor", "sailor")
+
         # The Chirp3-HD voices do not support SSML. We must send plain text.
-        synthesis_input = texttospeech.SynthesisInput(text=dialogue)
+        synthesis_input = texttospeech.SynthesisInput(text=phonetic_dialogue)
 
         voice_params = texttospeech.VoiceSelectionParams(
             language_code=voice_name.split('-')[0] + '-' + voice_name.split('-')[1], # Extract locale e.g., en-US
@@ -272,4 +275,3 @@ def get_podcast_status(job_id):
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
-
