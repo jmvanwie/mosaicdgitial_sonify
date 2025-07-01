@@ -118,9 +118,18 @@ def generate_podcast_audio(text_content, output_filepath, voice_names=['en-US-Wa
     ssml_content += '</speak>'
 
     synthesis_input = texttospeech.SynthesisInput(ssml=ssml_content)
+    
+    # FIX: Add a default voice parameter. This may be required for the API call to be valid,
+    # even though the <voice> tags in the SSML will override it.
+    voice_params = texttospeech.VoiceSelectionParams(language_code="en-US")
+    
     audio_config = texttospeech.AudioConfig(audio_encoding=texttospeech.AudioEncoding.MP3)
     
-    response = tts_client.synthesize_speech(input=synthesis_input, audio_config=audio_config)
+    response = tts_client.synthesize_speech(
+        input=synthesis_input, 
+        voice=voice_params, 
+        audio_config=audio_config
+    )
     
     with open(output_filepath, "wb") as out:
         out.write(response.audio_content)
