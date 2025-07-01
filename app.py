@@ -1,4 +1,4 @@
-# app.py - Final Production Version
+# app.py - Final Production Version (Corrected)
 
 import os
 import uuid
@@ -31,7 +31,6 @@ CORS(app, resources={r"/*": {"origins": origins}})
 # --- Service Initialization Globals ---
 db = None
 bucket = None
-
 tts_client = None
 genai_model = None
 
@@ -39,17 +38,10 @@ def initialize_services():
     """Initializes all external services using environment variables."""
     global db, bucket, tts_client, genai_model
 
-    # --- Use Application Default Credentials ---
-    # The Google libraries will automatically find and use the file specified
-    # in the GOOGLE_APPLICATION_CREDENTIALS environment variable.
-
     if not firebase_admin._apps:
         try:
             print("Attempting to initialize Firebase using Application Default Credentials...")
-            
-            # This simplified call now works because of the GOOGLE_APPLICATION_CREDENTIALS env var.
             firebase_admin.initialize_app() 
-
             db = firestore.client()
             bucket = storage.bucket(os.environ.get('FIREBASE_STORAGE_BUCKET'))
             print("Successfully connected to Firebase.")
@@ -60,7 +52,6 @@ def initialize_services():
     if tts_client is None:
         try:
             print("Initializing Google Cloud Text-to-Speech client...")
-            # This client also finds credentials from the environment automatically.
             tts_client = texttospeech.TextToSpeechClient()
             print("Text-to-Speech client initialized.")
         except Exception as e:
@@ -117,14 +108,10 @@ def generate_podcast_audio(text_content, output_filepath, voice_names=['en-US-Wa
     Alternates voices for each paragraph.
     """
     print(f"Generating audio with voices: {voice_names}")
-
-    # Split the script into paragraphs
     paragraphs = [p.strip() for p in text_content.split('\n') if p.strip()]
     
-    # Construct the SSML content
     ssml_content = '<speak>'
     for i, paragraph in enumerate(paragraphs):
-        # Sanitize paragraph for SSML
         sanitized_paragraph = paragraph.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
         voice_name = voice_names[i % len(voice_names)]
         ssml_content += f'<voice name="{voice_name}">{sanitized_paragraph}</voice>'
@@ -133,7 +120,6 @@ def generate_podcast_audio(text_content, output_filepath, voice_names=['en-US-Wa
     synthesis_input = texttospeech.SynthesisInput(ssml=ssml_content)
     audio_config = texttospeech.AudioConfig(audio_encoding=texttospeech.AudioEncoding.MP3)
     
-    # The voice parameter in synthesize_speech is ignored when using SSML with voice tags
     response = tts_client.synthesize_speech(input=synthesis_input, audio_config=audio_config)
     
     with open(output_filepath, "wb") as out:
@@ -164,21 +150,6 @@ def _finalize_job(job_id, local_audio_path, generated_script=None):
     print(f"Firestore document for job {job_id} updated to complete.")
     return {"status": "Complete", "podcast_url": podcast_url}
 
- # --- API Endpoints ---
-@app.before_request
-def before_first_request_func():
-    initialize_services()
-
-# ADD THIS NEW ROUTE FOR DIAGNOSTICS
-@app.route("/")
-def index():
-    return jsonify({"message": "Welcome to the Sonify API! The server is running."})
-# END OF NEW ROUTE
-
-@app.route("/generate-from-idea", methods=["POST"])
-def handle_idea_generation():
-    # ... (rest of your function)
-
 # --- Celery Task Definitions ---
 @celery.task
 def generate_podcast_from_idea_task(job_id, topic, context, duration, voices):
@@ -190,7 +161,6 @@ def generate_podcast_from_idea_task(job_id, topic, context, duration, voices):
         podcast_script = generate_script_from_idea(topic, context, duration)
         if not podcast_script: raise Exception("Script generation failed.")
         
-        # Pass the voices to the audio generation function
         if not generate_podcast_audio(podcast_script, output_filepath, voices): 
             raise Exception("Audio generation failed.")
             
@@ -205,6 +175,11 @@ def generate_podcast_from_idea_task(job_id, topic, context, duration, voices):
 @app.before_request
 def before_first_request_func():
     initialize_services()
+
+# ADD THIS NEW ROUTE FOR DIAGNOSTICS
+@app.route("/")
+def index():
+    return jsonify({"message": "Welcome to the Sonify API! The server is running."})
 
 @app.route("/generate-from-idea", methods=["POST"])
 def handle_idea_generation():
@@ -239,4 +214,3 @@ def get_podcast_status(job_id):
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
-
