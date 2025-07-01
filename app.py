@@ -119,10 +119,13 @@ def generate_podcast_audio(text_content, output_filepath, voice_names=['en-US-Wa
 
     synthesis_input = texttospeech.SynthesisInput(ssml=ssml_content)
     
-    # FINAL WORKAROUND: To satisfy the API's contradictory validation rules,
-    # we provide a 'voice' parameter, but we leave it completely empty.
-    # This should pass the "not empty" check while avoiding the "feature conflict" error.
-    voice_params = texttospeech.VoiceSelectionParams()
+    # FINAL WORKAROUND ATTEMPT: Use a WaveNet voice as the "sacrificial" parameter.
+    # This is the last attempt to solve the API's contradictory validation rules
+    # before needing to redesign this function.
+    voice_params = texttospeech.VoiceSelectionParams(
+        language_code="en-US",
+        name="en-US-Wavenet-D" # A premium WaveNet voice
+    )
     
     audio_config = texttospeech.AudioConfig(audio_encoding=texttospeech.AudioEncoding.MP3)
     
