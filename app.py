@@ -133,9 +133,9 @@ def parse_script(script_text):
 def generate_podcast_audio(script_text, output_filepath, voice_names):
     """
     Generates podcast audio by parsing a script with speaker tags, synthesizing
-    each part with the correct voice and expressive SSML, and then stitching them together.
+    each part with the correct voice, and then stitching them together.
     """
-    print(f"Generating audio with advanced SSML for voices: {voice_names}")
+    print(f"Generating audio for voices: {voice_names}")
     
     dialogue_parts = parse_script(script_text)
     if not dialogue_parts:
@@ -157,20 +157,8 @@ def generate_podcast_audio(script_text, output_filepath, voice_names):
 
         print(f"Synthesizing dialogue for {speaker_tag} with voice {voice_name}...")
         
-        # Sanitize the dialogue for SSML
-        sanitized_dialogue = dialogue.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
-
-        # Use more advanced SSML for a natural, conversational tone
-        ssml_text = (
-            f'<speak>'
-            f'<prosody rate="medium" pitch="0st">'
-            f'<emphasis level="moderate">{sanitized_dialogue}</emphasis>'
-            f'</prosody>'
-            f'<break time="600ms"/>'
-            f'</speak>'
-        )
-
-        synthesis_input = texttospeech.SynthesisInput(ssml=ssml_text)
+        # FINAL FIX: The Chirp3-HD voices do not support SSML. We must send plain text.
+        synthesis_input = texttospeech.SynthesisInput(text=dialogue)
 
         voice_params = texttospeech.VoiceSelectionParams(
             language_code=voice_name.split('-')[0] + '-' + voice_name.split('-')[1], # Extract locale e.g., en-GB
@@ -185,7 +173,9 @@ def generate_podcast_audio(script_text, output_filepath, voice_names):
         )
         
         audio_chunk = AudioSegment.from_file(io.BytesIO(response.audio_content), format="mp3")
-        combined_audio += audio_chunk
+        
+        # Add a small pause between speakers for a more natural feel
+        combined_audio += audio_chunk + AudioSegment.silent(duration=600)
 
     print(f"Exporting combined audio to {output_filepath}...")
     combined_audio.export(output_filepath, format="mp3")
@@ -282,3 +272,4 @@ def get_podcast_status(job_id):
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
+
