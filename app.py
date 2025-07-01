@@ -119,13 +119,21 @@ def generate_podcast_audio(text_content, output_filepath, voice_names=['en-US-Wa
 
     synthesis_input = texttospeech.SynthesisInput(ssml=ssml_content)
     
-    # When using SSML with <voice> tags for Studio voices, you must NOT
-    # specify a voice in the main request. The voices are defined
-    # entirely within the SSML.
+    # WORKAROUND: The Google Cloud API seems to have a validation quirk.
+    # It requires a 'voice' parameter to be present, but throws an error if that
+    # voice is a Studio voice when also using SSML <voice> tags.
+    # The solution is to provide a basic, non-premium voice here to pass validation.
+    # The SSML <voice> tags will override this selection for the actual audio generation.
+    voice_params = texttospeech.VoiceSelectionParams(
+        language_code="en-US",
+        name="en-US-Standard-C" # A standard, non-premium voice
+    )
+    
     audio_config = texttospeech.AudioConfig(audio_encoding=texttospeech.AudioEncoding.MP3)
     
     response = tts_client.synthesize_speech(
         input=synthesis_input,
+        voice=voice_params,
         audio_config=audio_config
     )
     
