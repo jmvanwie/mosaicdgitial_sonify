@@ -1,14 +1,15 @@
-# app.py - Final Production Version (Corrected)
+# app.py - Final Production Version (Corrected with Robust Audio Generation)
 
 import os
 import uuid
 import re
+import io
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from celery import Celery
 import firebase_admin
 from firebase_admin import credentials, firestore, storage
-from PyPDF2 import PdfReader
+from pydub import AudioSegment
 from google.cloud import texttospeech
 import google.generativeai as genai
 
@@ -104,41 +105,45 @@ def generate_script_from_idea(topic, context, duration):
 
 def generate_podcast_audio(text_content, output_filepath, voice_names=['en-US-Wavenet-A', 'en-US-Wavenet-B']):
     """
-    Generates podcast audio from text content using specified voices.
-    Alternates voices for each paragraph.
+    Generates podcast audio by synthesizing each paragraph individually and
+    stitching them together. This is a robust method that avoids complex SSML issues.
     """
-    print(f"Generating audio with voices: {voice_names}")
+    print(f"Generating audio in chunks for voices: {voice_names}")
     paragraphs = [p.strip() for p in text_content.split('\n') if p.strip()]
     
-    ssml_content = '<speak>'
+    # Initialize an empty audio segment
+    combined_audio = AudioSegment.empty()
+    
+    # Process each paragraph individually
     for i, paragraph in enumerate(paragraphs):
-        sanitized_paragraph = paragraph.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
         voice_name = voice_names[i % len(voice_names)]
-        ssml_content += f'<voice name="{voice_name}">{sanitized_paragraph}</voice>'
-    ssml_content += '</speak>'
+        print(f"Synthesizing paragraph {i+1}/{len(paragraphs)} with voice {voice_name}...")
+        
+        # Each request is simple: just text and a single voice
+        synthesis_input = texttospeech.SynthesisInput(text=paragraph)
+        voice_params = texttospeech.VoiceSelectionParams(
+            language_code="en-US",
+            name=voice_name
+        )
+        audio_config = texttospeech.AudioConfig(audio_encoding=texttospeech.AudioEncoding.MP3)
+        
+        response = tts_client.synthesize_speech(
+            input=synthesis_input,
+            voice=voice_params,
+            audio_config=audio_config
+        )
+        
+        # Load the synthesized audio chunk into pydub
+        audio_chunk = AudioSegment.from_file(io.BytesIO(response.audio_content), format="mp3")
+        
+        # Append the chunk to the combined audio
+        combined_audio += audio_chunk
 
-    synthesis_input = texttospeech.SynthesisInput(ssml=ssml_content)
+    # Export the final combined audio to the output file
+    print(f"Exporting combined audio to {output_filepath}...")
+    combined_audio.export(output_filepath, format="mp3")
     
-    # FINAL WORKAROUND ATTEMPT: Use a WaveNet voice as the "sacrificial" parameter.
-    # This is the last attempt to solve the API's contradictory validation rules
-    # before needing to redesign this function.
-    voice_params = texttospeech.VoiceSelectionParams(
-        language_code="en-US",
-        name="en-US-Wavenet-D" # A premium WaveNet voice
-    )
-    
-    audio_config = texttospeech.AudioConfig(audio_encoding=texttospeech.AudioEncoding.MP3)
-    
-    response = tts_client.synthesize_speech(
-        input=synthesis_input,
-        voice=voice_params,
-        audio_config=audio_config
-    )
-    
-    with open(output_filepath, "wb") as out:
-        out.write(response.audio_content)
-    
-    print(f"Audio content written to file '{output_filepath}'")
+    print(f"Audio content successfully written to file '{output_filepath}'")
     return True
 
 def _finalize_job(job_id, local_audio_path, generated_script=None):
