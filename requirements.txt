@@ -12,7 +12,7 @@ beautifulsoup4==4.12.3
 
 # --- File & Document Handling ---
 PyPDF2==3.0.1
-pydub==0.25.1
+
 
 # --- Google Cloud Services ---
 firebase-admin==6.5.0
