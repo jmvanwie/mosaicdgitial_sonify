@@ -1,4 +1,4 @@
-# app.py - Version for Netlify Frontend Architecture
+# app.py - Final, Corrected Version for Netlify Frontend Architecture
 
 import os
 import uuid
@@ -12,7 +12,7 @@ import google.generativeai as genai
 
 app = Flask(__name__)
 
-# Re-introducing the specific CORS configuration for Netlify
+# This is the correct CORS configuration to allow requests from your Netlify site.
 origins = [
     "https://statuesque-tiramisu-4b5936.netlify.app",
     "https://www.mosaicdigital.ai"
@@ -49,7 +49,7 @@ class ContextTask(celery.Task):
             return self.run(*args, **kwargs)
 celery.Task = ContextTask
 
-# --- API Endpoints (No longer serving HTML) ---
+# --- API Endpoints ---
 @app.route("/generate-from-idea", methods=["POST"])
 def handle_idea_generation():
     data = request.get_json()
