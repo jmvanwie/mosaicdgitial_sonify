@@ -112,11 +112,14 @@ def clean_script_for_tts(script_text):
 def generate_script_from_idea(topic, context, duration):
     print(f"Generating AI script for topic: {topic}")
     # IMPROVED PROMPT: More explicit instructions to get cleaner output.
-    prompt = (f"You are a professional podcast scriptwriter. Your task is to write a compelling and engaging podcast script "
-              f"for two AI voices. The script should be approximately {duration} in length. The topic of the podcast is: '{topic}'. "
+    prompt = (f"You are a professional podcast scriptwriter. Your task is to write a compelling and engaging podcast script for two charismatic AI hosts. "
+              f"The script should be approximately {duration} in length. The topic of the podcast is: '{topic}'. "
               f"Here is some additional context: '{context}'. "
-              f"IMPORTANT: Provide ONLY the dialogue to be spoken. Do NOT include any speaker labels (like 'AI Voice 1:'). "
-              f"Do NOT include any sound effect descriptions in parentheses or asterisks. Each speaker's part should be on a new line.")
+              f"IMPORTANT INSTRUCTIONS: "
+              f"1. Write the dialogue in a natural, conversational, and engaging tone. Avoid sounding robotic. "
+              f"2. Provide ONLY the dialogue to be spoken. Do NOT include speaker labels (like 'AI Voice 1:'). "
+              f"3. Do NOT include sound effect descriptions or stage directions. "
+              f"4. Separate each speaker's part with a pipe character ('|'). For example: 'Hello, welcome to the show.|Thanks, it's great to be here.'")
     response = genai_model.generate_content(prompt)
     print("AI script generated successfully.")
     return response.text
@@ -127,8 +130,8 @@ def generate_podcast_audio(text_content, output_filepath, voice_names=['en-US-Wa
     stitching them together. This is a robust method that avoids complex SSML issues.
     """
     print(f"Generating audio in chunks for voices: {voice_names}")
-    # Filter out empty lines that might result from the cleaning process
-    paragraphs = [p.strip() for p in text_content.split('\n') if p.strip()]
+    # FIX: Split the script by the pipe delimiter for reliable speaker separation.
+    paragraphs = [p.strip() for p in text_content.split('|') if p.strip()]
     
     if not paragraphs:
         raise ValueError("The script is empty after cleaning. Cannot generate audio.")
