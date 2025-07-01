@@ -1,10 +1,10 @@
-# app.py - Final Production Version with Multi-Speaker Support
+# app.py - Final Production Version with Multi-Speaker and Robust CORS
 
 import os
 import uuid
 import re
 from flask import Flask, request, jsonify
-from flask_cors import CORS
+from flask_cors import CORS  # Make sure this is imported
 from celery import Celery
 import firebase_admin
 from firebase_admin import credentials, firestore, storage
@@ -16,13 +16,18 @@ from pydub import AudioSegment
 # --- App & CORS Configuration ---
 app = Flask(__name__)
 
-origins = [
-    "https://statuesque-tiramisu-4b5936.netlify.app",
-    "https://www.mosaicdigital.ai",
-    "http://localhost:8000",
-    "http://127.0.0.1:5500"
-]
-CORS(app)
+# This is the new, more robust CORS configuration.
+# It explicitly allows requests from your Netlify and Wix domains,
+# and handles all the necessary headers and methods for modern browsers.
+cors = CORS(app, resources={
+    r"/generate-from-idea": {
+        "origins": ["https://statuesque-tiramisu-4b5936.netlify.app", "https://www.mosaicdigital.ai"]
+    },
+    r"/podcast-status/*": {
+        "origins": ["https://statuesque-tiramisu-4b5936.netlify.app", "https://www.mosaicdigital.ai"]
+    }
+})
+
 
 # --- Service Initialization Globals ---
 db = None
@@ -88,6 +93,8 @@ def make_celery(app):
 celery = make_celery(app)
 
 # --- Core Logic Functions ---
+# Note: The core logic functions below are unchanged from the previous version.
+# They are included here so you have the complete, correct file to paste.
 
 def generate_script(topic, context, duration, num_speakers):
     """Generates a script from Gemini, formatted for one or two speakers."""
@@ -117,17 +124,14 @@ def generate_multispeaker_audio(script_text, voice1, voice2, job_id):
     combined_audio = AudioSegment.empty()
     temp_files = []
     
-    # Process lines in chunks of two (marker + text)
     for i in range(1, len(lines), 2):
         speaker_tag = lines[i]
         text_content = lines[i+1].strip()
         
-        if not text_content:
-            continue
+        if not text_content: continue
 
         voice_name = voice1 if '1' in speaker_tag else voice2
         
-        # Generate a unique filename for each snippet
         snippet_filename = f"{job_id}_snippet_{i}.mp3"
         temp_files.append(snippet_filename)
         
@@ -141,7 +145,6 @@ def generate_multispeaker_audio(script_text, voice1, voice2, job_id):
         with open(snippet_filename, "wb") as out:
             out.write(response.audio_content)
             
-        # Append the new snippet to the combined audio
         snippet_audio = AudioSegment.from_mp3(snippet_filename)
         combined_audio += snippet_audio
 
@@ -149,7 +152,6 @@ def generate_multispeaker_audio(script_text, voice1, voice2, job_id):
     print(f"Exporting combined audio to {final_filename}")
     combined_audio.export(final_filename, format="mp3")
 
-    # Clean up temporary snippet files
     for f in temp_files:
         os.remove(f)
     print("Cleaned up temporary audio snippets.")
@@ -196,13 +198,12 @@ def _finalize_job(job_id, local_audio_path, generated_script):
     return {"status": "Complete", "podcast_url": podcast_url}
 
 # --- Celery Task Definition ---
-@celery.task
+@celery.task(name='app.generate_podcast_task') # Added explicit naming
 def generate_podcast_task(job_id, topic, context, duration, num_speakers, voice1, voice2):
     print(f"WORKER: Started job {job_id} for topic: {topic}")
     doc_ref = db.collection('podcasts').document(job_id)
     
     try:
-        # Initial Firestore document creation
         doc_ref.set({
             'topic': topic, 
             'context': context, 
@@ -215,11 +216,9 @@ def generate_podcast_task(job_id, topic, context, duration, num_speakers, voice1
             'voice2': voice2
         })
         
-        # 1. Generate Script
         podcast_script = generate_script(topic, context, duration, num_speakers)
         if not podcast_script: raise Exception("Script generation failed.")
         
-        # 2. Generate Audio
         if int(num_speakers) == 1:
             final_audio_path = generate_singlespeaker_audio(podcast_script, voice1, f"{job_id}.mp3")
         else:
@@ -227,30 +226,40 @@ def generate_podcast_task(job_id, topic, context, duration, num_speakers, voice1
             
         if not final_audio_path: raise Exception("Audio generation failed.")
 
-        # 3. Finalize Job
         return _finalize_job(job_id, final_audio_path, generated_script=podcast_script)
         
     except Exception as e:
         print(f"ERROR in Celery task {job_id}: {e}")
         doc_ref.update({'status': 'failed', 'error_message': str(e)})
-        # Clean up any potential local files on failure
         if os.path.exists(f"{job_id}.mp3"): os.remove(f"{job_id}.mp3")
         return {"status": "Failed", "error": str(e)}
 
 # --- API Endpoints ---
+@app.route("/")
+def health_check():
+    return "Server is running."
+
 @app.before_request
 def before_first_request_func():
-    initialize_services()
+    # This function will run before each request.
+    # We only need to initialize services once.
+    if 'services_initialized' not in app.config:
+        initialize_services()
+        app.config['services_initialized'] = True
 
-@app.route("/generate-from-idea", methods=["POST"])
+
+@app.route("/generate-from-idea", methods=["POST", "OPTIONS"])
 def handle_idea_generation():
+    if request.method == 'OPTIONS':
+        # This handles the preflight request
+        return jsonify(success=True)
+    
     data = request.get_json()
     if not data or not all(k in data for k in ['topic', 'context', 'num_speakers', 'voice1']):
         return jsonify({"error": "Missing required fields"}), 400
     
     job_id = str(uuid.uuid4())
     
-    # Use the new task name and pass all the new parameters
     generate_podcast_task.delay(
         job_id, 
         data['topic'], 
@@ -258,7 +267,7 @@ def handle_idea_generation():
         data.get('duration', '5 minutes'),
         data['num_speakers'],
         data['voice1'],
-        data.get('voice2') # Can be None if 1 speaker
+        data.get('voice2')
     )
     return jsonify({"message": "Podcast generation has been queued!", "job_id": job_id}), 202
 
