@@ -2,6 +2,7 @@
 
 import os
 import uuid
+import re
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from celery import Celery
@@ -17,6 +18,9 @@ app = Flask(__name__)
 # This list tells your backend that it's safe to accept requests
 # from these specific web addresses.
 origins = [
+    "https://vermillion-otter-bfe24a.netlify.app",
+    "https://statuesque-tiramisu-4b5936.netlify.app",
+    "https://coruscating-hotteok-a5fb56.netlify.app",
     "https://www.mosaicdigital.ai",
     "http://localhost:8000",
     "http://127.0.0.1:5500",
@@ -193,8 +197,9 @@ def handle_idea_generation():
         return jsonify({"error": "topic and context are required"}), 400
     
     job_id = str(uuid.uuid4())
-    # Pass the voices from the request, with a default
-    voices = data.get('voices', ['en-US-Wavenet-A', 'en-US-Wavenet-B'])
+    
+    # Use Studio voices as the default, but allow frontend to override
+    voices = data.get('voices', ['en-US-Studio-M', 'en-US-Studio-Q'])
     
     generate_podcast_from_idea_task.delay(
         job_id, 
