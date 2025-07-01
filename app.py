@@ -114,7 +114,7 @@ def generate_script_from_idea(topic, context, duration):
     # ENHANCED PROMPT for better performance and formatting
     prompt = (
         "You are a scriptwriter for a popular podcast. Your task is to write a script for two AI hosts who are witty, charismatic, and engaging. "
-        "The dialogue should feel natural, conversational, and have a good back-and-forth flow. Avoid a robotic or overly formal tone. "
+        "The dialogue should feel natural, warm, and have a good back-and-forth conversational flow. Avoid a robotic or overly formal tone. "
         f"The topic is: '{topic}'. "
         f"Additional context: '{context}'. "
         f"The podcast should be approximately {duration} long. "
@@ -147,7 +147,14 @@ def generate_podcast_audio(text_content, output_filepath, voice_names=['en-US-Wa
         voice_name = voice_names[i % len(voice_names)]
         print(f"Synthesizing paragraph {i+1}/{len(paragraphs)} with voice {voice_name}...")
         
-        synthesis_input = texttospeech.SynthesisInput(text=paragraph)
+        # Sanitize the paragraph for SSML
+        sanitized_paragraph = paragraph.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+
+        # Use SSML to add natural inflection and a conversational tone
+        ssml_text = f'<speak><prosody rate="medium" pitch="0st">{sanitized_paragraph}</prosody></speak>'
+
+        synthesis_input = texttospeech.SynthesisInput(ssml=ssml_text)
+
         voice_params = texttospeech.VoiceSelectionParams(
             language_code="en-US",
             name=voice_name
