@@ -76,12 +76,15 @@
                         <label for="context" class="block text-base font-medium text-gray-300 mb-2 font-display">Context or Idea</label>
                         <textarea id="context" rows="6" class="w-full bg-gray-700/80 border border-gray-600 text-white text-lg rounded-lg p-3 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition" placeholder="Provide a script, key points, or a simple idea..."></textarea>
                     </div>
-                     <div class="border-2 border-dashed border-gray-600 rounded-xl p-4 text-center cursor-pointer hover:border-blue-500 hover:bg-gray-700/30 transition">
-                        <svg class="mx-auto h-8 w-8 text-gray-500 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                          <path stroke-linecap="round" stroke-linejoin="round" d="M7 16a4 4 0 01-4-4V6a4 4 0 014-4h10a4 4 0 014 4v6a4 4 0 01-4 4H7z" />
-                          <path stroke-linecap="round" stroke-linejoin="round" d="M12 11v6m0 0l-3-3m3 3l3-3" />
-                        </svg>
-                        <p class="text-sm text-gray-400 font-display">Drag & drop a document or click to upload</p>
+                     <div id="drop-zone" class="border-2 border-dashed border-gray-600 rounded-xl p-4 text-center cursor-pointer hover:border-blue-500 hover:bg-gray-700/30 transition">
+                        <div id="drop-zone-content">
+                            <svg class="mx-auto h-8 w-8 text-gray-500 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                              <path stroke-linecap="round" stroke-linejoin="round" d="M7 16a4 4 0 01-4-4V6a4 4 0 014-4h10a4 4 0 014 4v6a4 4 0 01-4 4H7z" />
+                              <path stroke-linecap="round" stroke-linejoin="round" d="M12 11v6m0 0l-3-3m3 3l3-3" />
+                            </svg>
+                            <p class="text-sm text-gray-400 font-display">Drag & drop a document or click to upload</p>
+                        </div>
+                        <input type="file" id="file-input" class="hidden" accept=".txt,.md,.rtf">
                     </div>
                     <div class="flex items-center justify-between">
                         <label class="block text-base font-medium text-gray-300 font-display">Duration</label>
@@ -129,6 +132,48 @@
         const repositoryList = document.getElementById('repository-list');
         const emptyState = document.getElementById('empty-state');
         const durationSelector = document.getElementById('duration-selector');
+        const dropZone = document.getElementById('drop-zone');
+        const dropZoneContent = document.getElementById('drop-zone-content');
+        const fileInput = document.getElementById('file-input');
+        const contextTextArea = document.getElementById('context');
+
+        // --- File Drop Logic ---
+        dropZone.addEventListener('click', () => fileInput.click());
+        fileInput.addEventListener('change', (e) => handleFiles(e.target.files));
+
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            dropZone.classList.add('border-blue-500', 'bg-gray-700/30');
+        });
+
+        dropZone.addEventListener('dragleave', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            dropZone.classList.remove('border-blue-500', 'bg-gray-700/30');
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            dropZone.classList.remove('border-blue-500', 'bg-gray-700/30');
+            handleFiles(e.dataTransfer.files);
+        });
+
+        function handleFiles(files) {
+            const file = files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    contextTextArea.value = e.target.result;
+                    dropZoneContent.innerHTML = `<p class="text-sm text-green-400 font-display">File loaded: ${file.name}</p>`;
+                };
+                reader.onerror = () => {
+                    dropZoneContent.innerHTML = `<p class="text-sm text-red-400 font-display">Error reading file.</p>`;
+                };
+                reader.readAsText(file);
+            }
+        }
 
         // Handle duration button clicks
         durationSelector.addEventListener('click', (e) => {
@@ -146,7 +191,7 @@
 
         function submitJob() {
             const topic = document.getElementById('topic').value;
-            const context = document.getElementById('context').value;
+            const context = contextTextArea.value;
             const selectedDurationBtn = durationSelector.querySelector('.duration-btn.selected');
             const duration = selectedDurationBtn ? selectedDurationBtn.dataset.duration : '5 minutes';
             
@@ -276,7 +321,8 @@
         }
     </script>
 </body>
-</html>>
+</html>
+
 
 
 
