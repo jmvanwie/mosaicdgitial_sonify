@@ -119,19 +119,12 @@ def generate_podcast_audio(text_content, output_filepath, voice_names=['en-US-Wa
 
     synthesis_input = texttospeech.SynthesisInput(ssml=ssml_content)
     
-    # FINAL WORKAROUND: To satisfy the API's validation, we provide a language code
-    # and a gender, but NOT a specific voice name. This prevents conflicts
-    # and allows the SSML <voice> tags to take full control.
-    voice_params = texttospeech.VoiceSelectionParams(
-        language_code="en-US",
-        ssml_gender=texttospeech.SsmlVoiceGender.NEUTRAL
-    )
-    
+    # FINAL FIX: When using SSML with <voice> tags for Studio voices, the top-level
+    # 'voice' parameter MUST be omitted entirely.
     audio_config = texttospeech.AudioConfig(audio_encoding=texttospeech.AudioEncoding.MP3)
     
     response = tts_client.synthesize_speech(
         input=synthesis_input,
-        voice=voice_params,
         audio_config=audio_config
     )
     
@@ -227,4 +220,3 @@ def get_podcast_status(job_id):
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
-
