@@ -93,65 +93,82 @@ def make_celery(app):
 celery = make_celery(app)
 
 # --- Core Logic Functions ---
-def clean_script_for_tts(script_text):
-    """
-    Removes non-dialogue elements from a generated script.
-    """
-    print("Cleaning script for Text-to-Speech...")
-    # Remove text in parentheses, e.g., (Sound of...)
-    cleaned_text = re.sub(r'\(.*?\)', '', script_text)
-    # Remove text in asterisks, e.g., **Sound of...**
-    cleaned_text = re.sub(r'\*\*.*?\*\*', '', cleaned_text)
-    # Remove speaker labels, e.g., "AI Voice 1:", "AI Voices 1 & 2:"
-    cleaned_text = re.sub(r'AI Voices?(\s\d\s?(&\s?\d)?)?:\s?', '', cleaned_text)
-    # Remove any leading/trailing whitespace from each line
-    cleaned_text = "\n".join([line.strip() for line in cleaned_text.split('\n')])
-    print("Script cleaned.")
-    return cleaned_text
-
 def generate_script_from_idea(topic, context, duration):
     print(f"Generating AI script for topic: {topic}")
     # ENHANCED PROMPT for better performance and formatting
     prompt = (
-        "You are a scriptwriter for a popular podcast. Your task is to write a script for two AI hosts who are witty, charismatic, and engaging. "
-        "The dialogue should feel natural, warm, and have a good back-and-forth conversational flow. Avoid a robotic or overly formal tone. "
+        "You are a scriptwriter for a popular podcast. Your task is to write a script for two AI hosts, SPEAKER_1 (male) and SPEAKER_2 (female). "
+        "The hosts are witty, charismatic, and engaging. The dialogue should feel natural, warm, and have a good back-and-forth conversational flow. "
         f"The topic is: '{topic}'. "
         f"Additional context: '{context}'. "
         f"The podcast should be approximately {duration} long. "
         "--- \n"
-        "IMPORTANT FORMATTING RULES: \n"
-        "1.  Provide ONLY the dialogue. Do NOT include speaker labels (e.g., 'Host 1:'). \n"
-        "2.  Do NOT include any stage directions or sound effect descriptions (e.g., '(laughs)', '**upbeat music**'). \n"
-        "3.  You MUST separate each speaker's part with a pipe character ('|'). The entire script should be a single line of text with parts separated by '|'. \n"
-        "4.  EXAMPLE: 'Welcome back to the AI Insights podcast! We have a fascinating topic today.|I'm really excited for this one. We're diving deep into the world of quantum computing.|It sounds complex, but we'll break it down for everyone.|Exactly. So, to start, what exactly is a qubit?'"
+        "IMPORTANT INSTRUCTIONS: \n"
+        "1.  Start each line with the speaker's tag, either '[SPEAKER_1]' or '[SPEAKER_2]'. \n"
+        "2.  Alternate speakers for each line of dialogue. \n"
+        "3.  Do NOT include any other text, directions, or formatting. \n"
+        "4.  EXAMPLE: \n"
+        "[SPEAKER_1] Welcome back to AI Insights! Today, we're tackling a huge topic: quantum computing. \n"
+        "[SPEAKER_2] It sounds intimidating, but I promise we'll make it fun. Ready to dive in? \n"
+        "[SPEAKER_1] Absolutely. So, at its core, what makes a quantum computer different from the one on your desk?"
     )
     response = genai_model.generate_content(prompt)
     print("AI script generated successfully.")
     return response.text
 
-def generate_podcast_audio(text_content, output_filepath, voice_names=['en-US-Wavenet-A', 'en-US-Wavenet-B']):
+def parse_script(script_text):
+    """Parses a script with speaker tags into a list of (speaker, dialogue) tuples."""
+    print("Parsing script...")
+    dialogue_parts = []
+    # Regex to find speaker tags and the text that follows
+    pattern = re.compile(r'(\[SPEAKER_[12]\])\s*(.*)')
+    for line in script_text.split('\n'):
+        match = pattern.match(line.strip())
+        if match:
+            speaker_tag, dialogue = match.groups()
+            dialogue_parts.append((speaker_tag, dialogue.strip()))
+    print(f"Parsed {len(dialogue_parts)} dialogue parts.")
+    return dialogue_parts
+
+def generate_podcast_audio(script_text, output_filepath, voice_names):
     """
-    Generates podcast audio by synthesizing each paragraph individually and
-    stitching them together. This is a robust method that avoids complex SSML issues.
+    Generates podcast audio by parsing a script with speaker tags, synthesizing
+    each part with the correct voice and expressive SSML, and then stitching them together.
     """
-    print(f"Generating audio in chunks for voices: {voice_names}")
-    # Split the script by the pipe delimiter for reliable speaker separation.
-    paragraphs = [p.strip() for p in text_content.split('|') if p.strip()]
+    print(f"Generating audio with advanced SSML for voices: {voice_names}")
     
-    if not paragraphs:
-        raise ValueError("The script is empty after cleaning. Cannot generate audio.")
+    dialogue_parts = parse_script(script_text)
+    if not dialogue_parts:
+        raise ValueError("The script is empty or could not be parsed. Cannot generate audio.")
+
+    # Map speaker tags to the provided voice names
+    voice_map = {
+        '[SPEAKER_1]': voice_names[0],
+        '[SPEAKER_2]': voice_names[1]
+    }
 
     combined_audio = AudioSegment.empty()
     
-    for i, paragraph in enumerate(paragraphs):
-        voice_name = voice_names[i % len(voice_names)]
-        print(f"Synthesizing paragraph {i+1}/{len(paragraphs)} with voice {voice_name}...")
-        
-        # Sanitize the paragraph for SSML
-        sanitized_paragraph = paragraph.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+    for speaker_tag, dialogue in dialogue_parts:
+        voice_name = voice_map.get(speaker_tag)
+        if not voice_name:
+            print(f"Warning: Skipping dialogue part with unknown speaker tag: {speaker_tag}")
+            continue
 
-        # Use SSML to add natural inflection, removing the unsupported 'pitch' attribute for Studio voices.
-        ssml_text = f'<speak><prosody rate="medium">{sanitized_paragraph}</prosody></speak>'
+        print(f"Synthesizing dialogue for {speaker_tag} with voice {voice_name}...")
+        
+        # Sanitize the dialogue for SSML
+        sanitized_dialogue = dialogue.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+
+        # Use more advanced SSML for a natural, conversational tone
+        ssml_text = (
+            f'<speak>'
+            f'<prosody rate="medium" pitch="0st">'
+            f'<emphasis level="moderate">{sanitized_dialogue}</emphasis>'
+            f'</prosody>'
+            f'<break time="600ms"/>'
+            f'</speak>'
+        )
 
         synthesis_input = texttospeech.SynthesisInput(ssml=ssml_text)
 
@@ -205,18 +222,14 @@ def generate_podcast_from_idea_task(job_id, topic, context, duration, voices):
     doc_ref = db.collection('podcasts').document(job_id)
     output_filepath = f"{job_id}.mp3"
     try:
-        # FIX: Create the document in Firestore immediately so it can be updated later.
         doc_ref.set({'topic': topic, 'context': context, 'source_type': 'idea', 'duration': duration, 'status': 'processing', 'created_at': firestore.SERVER_TIMESTAMP, 'voices': voices})
         
-        # Generate the original script
+        # Generate the original script with speaker tags
         original_script = generate_script_from_idea(topic, context, duration)
         if not original_script: raise Exception("Script generation failed.")
         
-        # Clean the script before audio generation
-        cleaned_script = clean_script_for_tts(original_script)
-        
-        # Generate audio from the cleaned script
-        if not generate_podcast_audio(cleaned_script, output_filepath, voices): 
+        # Generate audio from the parsed script
+        if not generate_podcast_audio(original_script, output_filepath, voices): 
             raise Exception("Audio generation failed.")
             
         # Finalize the job, saving the ORIGINAL script for user reference
@@ -232,7 +245,6 @@ def generate_podcast_from_idea_task(job_id, topic, context, duration, voices):
 def before_first_request_func():
     initialize_services()
 
-# ADD THIS NEW ROUTE FOR DIAGNOSTICS
 @app.route("/")
 def index():
     return jsonify({"message": "Welcome to the Sonify API! The server is running."})
@@ -245,8 +257,8 @@ def handle_idea_generation():
     
     job_id = str(uuid.uuid4())
     
-    # Use Studio voices as the default, but allow frontend to override
-    voices = data.get('voices', ['en-US-Studio-M', 'en-US-Studio-Q'])
+    # Change default to high-quality WaveNet voices known for a natural tone
+    voices = data.get('voices', ['en-US-Wavenet-D', 'en-US-Wavenet-F'])
     
     generate_podcast_from_idea_task.delay(
         job_id, 
