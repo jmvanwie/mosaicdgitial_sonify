@@ -111,7 +111,7 @@ def generate_script_from_idea(topic, context, duration):
 def generate_podcast_audio(text_content, output_filepath):
     print(f"Generating audio for text (first 100 chars): {text_content[:100]}...")
     synthesis_input = texttospeech.SynthesisInput(text=text_content)
-    voice = texttospeech.VoiceSelectionParams(language_code="en-US", ssml_gender=texttospeech.SsmlVoiceGender.NEUTRAL)
+    voice = texttospeech.VoiceSelectionParams(language_code='en-US', name='en-US-WaveNet-J')
     audio_config = texttospeech.AudioConfig(audio_encoding=texttospeech.AudioEncoding.MP3)
     response = tts_client.synthesize_speech(input=synthesis_input, voice=voice, audio_config=audio_config)
     with open(output_filepath, "wb") as out:
