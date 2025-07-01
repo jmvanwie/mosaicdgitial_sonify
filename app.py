@@ -22,7 +22,7 @@ origins = [
     "http://localhost:8000",
     "http://127.0.0.1:5500"
 ]
-CORS(app, resources={r"/*": {"origins": origins}})
+CORS(app, origins=["https://statuesque-tiramisu-4b5936.netlify.app", "https://www.mosaicdigital.ai"])
 
 # --- Service Initialization Globals ---
 db = None
@@ -275,4 +275,3 @@ def get_podcast_status(job_id):
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
-    
