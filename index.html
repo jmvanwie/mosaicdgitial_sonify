@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Podcast Generator</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Comfortaa:wght@400;500;600;700&family=Roboto:wght@400;500&display=swap" rel="stylesheet">
+    
+    <style>
+        :root {
+            --primary-glow-color: #00aaff;
+            --light-outline: #ffffff;
+            --white: #ffffff;
+            --input-bg-color: #404e67;
+            --upload-box-bg: #b5bdc4;
+            --upload-box-border: #525e75;
+            --font-display: "Comfortaa", cursive;
+            --font-body: "Roboto", sans-serif;
+        }
+
+        body {
+            font-family: var(--font-body);
+            background-color: transparent;
+            color: var(--light-outline);
+            margin: 0;
+            padding: 1.5rem;
+        }
+
+        .app-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 2.5rem;
+        }
+
+        .form-column, .repository-column {
+            flex: 1;
+            min-width: 350px;
+        }
+
+        .input-group {
+            margin-bottom: 1.5rem;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 0.75rem;
+            font-weight: 500;
+            font-size: 1.3rem;
+            font-family: var(--font-display);
+        }
+
+        .form-input {
+            width: 100%;
+            padding: 18px 20px;
+            border: 2px solid var(--light-outline);
+            background-color: var(--input-bg-color);
+            color: var(--light-outline);
+            border-radius: 10px;
+            font-family: var(--font-display);
+            font-size: 1.2rem;
+            transition: all 0.3s ease;
+            box-sizing: border-box;
+        }
+
+        .form-input::placeholder {
+            color: #ccc;
+            opacity: 0.7;
+            font-family: var(--font-display);
+        }
+
+        .form-input:focus {
+            outline: none;
+            border-color: var(--primary-glow-color);
+            box-shadow: 0 0 0 4px rgba(0, 170, 255, 0.35);
+        }
+
+        textarea.form-input {
+            min-height: 150px;
+            resize: vertical;
+        }
+
+        .file-drop-area { 
+            margin-top: 1.5rem; 
+            border: 3px dashed var(--upload-box-border); 
+            border-radius: 10px; 
+            padding: 2.5rem 1.5rem; 
+            text-align: center; 
+            font-family: var(--font-display); 
+            font-size: 1.2rem; 
+            font-weight: 600; 
+            background-color: var(--upload-box-bg); 
+            color: var(--upload-box-border); 
+            transition: background-color 0.3s ease; 
+        }
+        .file-drop-area:hover { 
+            background-color: #a9b1b8; 
+            cursor: pointer; 
+        }
+        .file-upload-icon svg { 
+            width: 40px; 
+            height: 40px; 
+            margin-bottom: 0.8rem; 
+        }
+
+        .generate-btn {
+            background-color: var(--light-outline);
+            color: #000;
+            border: none;
+            padding: 15px 25px;
+            border-radius: 10px;
+            font-size: 1.2rem;
+            font-family: var(--font-display);
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            width: 100%;
+            margin-top: 1.5rem;
+        }
+        
+        .generate-btn:hover {
+            background-color: var(--primary-glow-color);
+            color: var(--white);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 10px rgba(0, 170, 255, 0.2);
+        }
+        
+        #status { 
+            margin-top: 1.5rem; 
+            padding: 1rem; 
+            background-color: #333; 
+            border-radius: 8px; 
+            text-align: center; 
+            display: none; 
+            font-family: var(--font-display);
+            font-size: 1.1rem;
+        }
+
+        .repository-title { 
+            font-family: var(--font-display); 
+            font-size: 1.5rem; 
+            font-weight: 500; 
+            border-bottom: 2px solid var(--light-outline); 
+            padding-bottom: 0.5rem; 
+            margin-bottom: 1rem;
+        }
+
+        #repository-list { 
+            display: flex; 
+            flex-direction: column; 
+            gap: 1rem; 
+        }
+
+        .repository-item { 
+            background-color: rgba(255, 255, 255, 0.05); 
+            border-radius: 8px; 
+            padding: 1rem; 
+            border: 1px solid rgba(255, 255, 255, 0.2); 
+            display: flex; 
+            align-items: center; 
+            gap: 1rem; 
+        }
+
+        .repository-item-artwork { 
+            width: 80px; 
+            height: 80px; 
+            background-color: #333; 
+            border-radius: 6px; 
+            flex-shrink: 0; 
+        }
+
+        .repository-item-details { 
+            flex-grow: 1; 
+        }
+
+        .repository-item-title { 
+            font-weight: 500; 
+            font-family: var(--font-display); 
+            margin: 0 0 0.5rem 0; 
+        }
+    </style>
+</head>
+<body>
+
+    <div class="app-container">
+        <div class="form-column">
+            <div class="input-group">
+                <label for="topic">Topic</label>
+                <input type="text" id="topic" class="form-input" placeholder="Give your show a title...">
+            </div>
+            <div class="input-group">
+                <label for="context">Context</label>
+                <textarea id="context" class="form-input" placeholder="Type your script or ideas here..."></textarea>
+            </div>
+            <div class="file-drop-area">
+                <div class="file-upload-icon">
+                    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M12 2C6.48 2 2 6.48 2 12C2 17.52 6.48 22 12 22C17.52 22 22 17.52 22 12C22 6.48 17.52 2 12 2ZM12 20C7.59 20 4 16.41 4 12C4 7.59 7.59 4 12 4C16.41 4 20 7.59 20 12C20 16.41 16.41 20 12 20ZM13 12V16H11V12H8L12 8L16 12H13Z" fill="#525e75"/>
+                    </svg>
+                </div>
+                Drag & drop a file, or click to upload
+            </div>
+            <button onclick="submitJob()" class="generate-btn">Create Podcast</button>
+            <div id="status"></div>
+        </div>
+        <div class="repository-column">
+             <h2 class="repository-title">Generated Podcasts</h2>
+            <div id="repository-list">
+                <div class="repository-item">
+                    <div class="repository-item-artwork"></div>
+                    <div class="repository-item-details">
+                        <p class="repository-item-title">Example Podcast</p>
+                        <audio controls style="width: 100%;"></audio>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // The API URL now points directly to your Render server
+        const RENDER_API_URL = "https://mosaicdgitial-sonify-ws.onrender.com"; 
+
+        function submitJob() {
+            const topic = document.getElementById('topic').value;
+            const context = document.getElementById('context').value;
+            const statusDiv = document.getElementById('status');
+            statusDiv.style.display = 'block';
+            statusDiv.textContent = 'Submitting job...';
+
+            if (!topic || !context) {
+                statusDiv.textContent = 'Please fill out both Topic and Context.';
+                return;
+            }
+
+            fetch(`${RENDER_API_URL}/generate-from-idea`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ topic, context })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.job_id) {
+                    statusDiv.textContent = `Job queued! Checking status...`;
+                    pollForStatus(data.job_id);
+                } else {
+                    statusDiv.textContent = 'Error: ' + (data.error || 'Unknown error');
+                }
+            })
+            .catch(err => {
+                statusDiv.textContent = 'Error: ' + err.message;
+            });
+        }
+
+        function pollForStatus(jobId) {
+            const interval = setInterval(() => {
+                fetch(`${RENDER_API_URL}/podcast-status/${jobId}`)
+                .then(response => response.json())
+                .then(data => {
+                    const statusDiv = document.getElementById('status');
+                    statusDiv.textContent = `Job Status: ${data.status}`;
+                    if (data.status === 'complete' || data.status === 'failed') {
+                        clearInterval(interval);
+                        if (data.status === 'complete') {
+                            addPodcastToRepository(data);
+                            statusDiv.textContent = 'Podcast complete!';
+                        } else {
+                             statusDiv.textContent = `Job failed: ${data.error_message}`;
+                        }
+                    }
+                });
+            }, 5000);
+        }
+
+        function addPodcastToRepository(data) {
+            const repositoryList = document.getElementById('repository-list');
+            const item = document.createElement('div');
+            item.className = 'repository-item';
+            const artwork = document.createElement('div');
+            artwork.className = 'repository-item-artwork';
+            const details = document.createElement('div');
+            details.className = 'repository-item-details';
+            const title = document.createElement('p');
+            title.className = 'repository-item-title';
+            title.textContent = data.topic || 'Untitled Podcast';
+            const audio = document.createElement('audio');
+            audio.controls = true;
+            audio.src = data.podcast_url;
+            audio.style.width = '100%';
+            details.appendChild(title);
+            details.appendChild(audio);
+            item.appendChild(artwork);
+            item.appendChild(details);
+            repositoryList.prepend(item);
+        }
+    </script>
+</body>
+</html>
