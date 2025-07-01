@@ -31,6 +31,7 @@ CORS(app, resources={r"/*": {"origins": origins}})
 # --- Service Initialization Globals ---
 db = None
 bucket = None
+
 tts_client = None
 genai_model = None
 
@@ -162,6 +163,21 @@ def _finalize_job(job_id, local_audio_path, generated_script=None):
     db.collection('podcasts').document(job_id).update(update_data)
     print(f"Firestore document for job {job_id} updated to complete.")
     return {"status": "Complete", "podcast_url": podcast_url}
+
+ # --- API Endpoints ---
+@app.before_request
+def before_first_request_func():
+    initialize_services()
+
+# ADD THIS NEW ROUTE FOR DIAGNOSTICS
+@app.route("/")
+def index():
+    return jsonify({"message": "Welcome to the Sonify API! The server is running."})
+# END OF NEW ROUTE
+
+@app.route("/generate-from-idea", methods=["POST"])
+def handle_idea_generation():
+    # ... (rest of your function)
 
 # --- Celery Task Definitions ---
 @celery.task
