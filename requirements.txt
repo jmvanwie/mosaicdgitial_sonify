@@ -6,7 +6,6 @@ gunicorn==22.0.0
 celery==5.4.0
 redis==5.0.7
 
-
 # --- File & Document Handling ---
 PyPDF2==3.0.1
 
