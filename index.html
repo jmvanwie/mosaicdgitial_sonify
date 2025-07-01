@@ -54,6 +54,10 @@
         .status-loading {
             animation: pulse-bg 2s infinite;
         }
+        /* Custom color for selected button */
+        .bg-custom-selected {
+            background-color: #62929e;
+        }
     </style>
 </head>
 <body class="text-white">
@@ -72,12 +76,19 @@
                         <label for="context" class="block text-base font-medium text-gray-300 mb-2 font-display">Context or Idea</label>
                         <textarea id="context" rows="8" class="w-full bg-gray-700/80 border border-gray-600 text-white text-lg rounded-lg p-3 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition" placeholder="Provide a script, key points, or a simple idea..."></textarea>
                     </div>
-                    <div>
-                        <label class="block text-base font-medium text-gray-300 mb-2 font-display">Duration</label>
+                     <div class="border-2 border-dashed border-gray-600 rounded-xl p-6 text-center cursor-pointer hover:border-blue-500 hover:bg-gray-700/30 transition">
+                        <svg class="mx-auto h-10 w-10 text-gray-500 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                          <path stroke-linecap="round" stroke-linejoin="round" d="M7 16a4 4 0 01-4-4V6a4 4 0 014-4h10a4 4 0 014 4v6a4 4 0 01-4 4H7z" />
+                          <path stroke-linecap="round" stroke-linejoin="round" d="M12 11v6m0 0l-3-3m3 3l3-3" />
+                        </svg>
+                        <p class="text-sm text-gray-400 font-display">Drag & drop a document or click to upload</p>
+                    </div>
+                    <div class="flex items-center justify-between">
+                        <label class="block text-base font-medium text-gray-300 font-display">Duration</label>
                         <div id="duration-selector" class="flex flex-wrap gap-3">
-                            <button class="duration-btn bg-gray-700/80 hover:bg-gray-600/80 text-white font-medium py-2 px-4 rounded-lg transition" data-duration="1 minute">1 Minute</button>
-                            <button class="duration-btn bg-gray-700/80 hover:bg-gray-600/80 text-white font-medium py-2 px-4 rounded-lg transition" data-duration="3 minutes">3 Minutes</button>
-                            <button class="duration-btn bg-blue-600 text-white font-medium py-2 px-4 rounded-lg transition selected" data-duration="5 minutes">5 Minutes</button>
+                            <button class="duration-btn bg-gray-700/80 hover:bg-gray-600/80 text-white font-medium py-2 px-4 rounded-xl transition" data-duration="1 minute">1 Min</button>
+                            <button class="duration-btn bg-gray-700/80 hover:bg-gray-600/80 text-white font-medium py-2 px-4 rounded-xl transition" data-duration="3 minutes">3 Min</button>
+                            <button class="duration-btn bg-custom-selected text-white font-medium py-2 px-4 rounded-xl transition selected" data-duration="5 minutes">5 Min</button>
                         </div>
                     </div>
                     <div>
@@ -124,11 +135,11 @@
             if (e.target.classList.contains('duration-btn')) {
                 // Remove selected state from all buttons
                 durationSelector.querySelectorAll('.duration-btn').forEach(btn => {
-                    btn.classList.remove('bg-blue-600', 'selected');
+                    btn.classList.remove('bg-custom-selected', 'selected');
                     btn.classList.add('bg-gray-700/80', 'hover:bg-gray-600/80');
                 });
                 // Add selected state to the clicked button
-                e.target.classList.add('bg-blue-600', 'selected');
+                e.target.classList.add('bg-custom-selected', 'selected');
                 e.target.classList.remove('bg-gray-700/80', 'hover:bg-gray-600/80');
             }
         });
