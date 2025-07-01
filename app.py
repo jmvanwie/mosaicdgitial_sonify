@@ -173,7 +173,7 @@ def generate_podcast_audio(script_text, output_filepath, voice_names):
         synthesis_input = texttospeech.SynthesisInput(ssml=ssml_text)
 
         voice_params = texttospeech.VoiceSelectionParams(
-            language_code="en-US",
+            language_code=voice_name.split('-')[0] + '-' + voice_name.split('-')[1], # Extract locale e.g., en-GB
             name=voice_name
         )
         audio_config = texttospeech.AudioConfig(audio_encoding=texttospeech.AudioEncoding.MP3)
@@ -257,8 +257,8 @@ def handle_idea_generation():
     
     job_id = str(uuid.uuid4())
     
-    # Change default to high-quality WaveNet voices known for a natural tone
-    voices = data.get('voices', ['en-US-Wavenet-D', 'en-US-Wavenet-F'])
+    # Change default to the new Chirp3-HD voices
+    voices = data.get('voices', ['en-GB-Chirp3-HD-Sadaltager', 'en-US-Chirp3-HD-Callirrhoe'])
     
     generate_podcast_from_idea_task.delay(
         job_id, 
