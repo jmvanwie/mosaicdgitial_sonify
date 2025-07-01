@@ -1,129 +1,192 @@
-# app.py - FINAL VERSION with manual preflight handling
+# app.py - Final Production Version
 
 import os
 import uuid
-from flask import Flask, request, jsonify, make_response
+from flask import Flask, request, jsonify
 from flask_cors import CORS
 from celery import Celery
 import firebase_admin
 from firebase_admin import credentials, firestore, storage
+from PyPDF2 import PdfReader
 from google.cloud import texttospeech
 import google.generativeai as genai
 
+# --- App & CORS Configuration ---
 app = Flask(__name__)
 
-# This is the correct CORS configuration to allow requests from your Netlify site.
+# This list tells your backend that it's safe to accept requests
+# from these specific web addresses.
 origins = [
+    "https://vermillion-otter-bfe24a.netlify.app",
     "https://statuesque-tiramisu-4b5936.netlify.app",
-    "https://www.mosaicdigital.ai"
+    "https://coruscating-hotteok-a5fb56.netlify.app",
+    "https://www.mosaicdigital.ai",
+    "http://localhost:8000",
+    "http://127.0.0.1:5500"
 ]
-# We apply CORS globally but will handle the preflight manually for robustness
-CORS(app, origins=origins)
+CORS(app, resources={r"/*": {"origins": origins}})
 
-# --- Service Initialization ---
-_services_initialized = False
-def initialize_all_services():
-    global _services_initialized, db, bucket, tts_client, genai_model
-    if _services_initialized:
-        return
+# --- Service Initialization Globals ---
+db = None
+bucket = None
+tts_client = None
+genai_model = None
+
+def initialize_services():
+    """Initializes all external services using environment variables."""
+    global db, bucket, tts_client, genai_model
+
+    # --- Use Application Default Credentials ---
+    # The Google libraries will automatically find and use the file specified
+    # in the GOOGLE_APPLICATION_CREDENTIALS environment variable.
+
     if not firebase_admin._apps:
-        firebase_admin.initialize_app()
-    
-    db = firestore.client()
-    bucket = storage.bucket(os.environ.get('FIREBASE_STORAGE_BUCKET'))
-    tts_client = texttospeech.TextToSpeechClient()
-    genai.configure(api_key=os.environ.get('GEMINI_API_KEY'))
-    genai_model = genai.GenerativeModel('gemini-1.5-pro-latest')
-    _services_initialized = True
-    print("All services initialized successfully.")
+        try:
+            print("Attempting to initialize Firebase using Application Default Credentials...")
+            
+            # This simplified call now works because of the GOOGLE_APPLICATION_CREDENTIALS env var.
+            firebase_admin.initialize_app() 
+
+            db = firestore.client()
+            bucket = storage.bucket(os.environ.get('FIREBASE_STORAGE_BUCKET'))
+            print("Successfully connected to Firebase.")
+        except Exception as e:
+            print(f"FATAL: Could not connect to Firebase: {e}")
+            raise e
+
+    if tts_client is None:
+        try:
+            print("Initializing Google Cloud Text-to-Speech client...")
+            # This client also finds credentials from the environment automatically.
+            tts_client = texttospeech.TextToSpeechClient()
+            print("Text-to-Speech client initialized.")
+        except Exception as e:
+            print(f"FATAL: Could not initialize TTS client: {e}")
+            raise e
+            
+    if genai_model is None:
+        try:
+            print("Initializing Google Gemini model...")
+            gemini_api_key = os.environ.get('GEMINI_API_KEY')
+            if not gemini_api_key:
+                raise ValueError("GEMINI_API_KEY environment variable not set.")
+            genai.configure(api_key=gemini_api_key)
+            genai_model = genai.GenerativeModel('gemini-1.5-pro-latest')
+            print("Gemini model initialized.")
+        except Exception as e:
+            print(f"FATAL: Could not initialize Gemini model: {e}")
+            raise e
 
 # --- Celery Configuration ---
-celery = Celery(app.import_name, 
-                backend=os.environ.get('CELERY_BROKER_URL'), 
-                broker=os.environ.get('CELERY_BROKER_URL'))
-celery.conf.update(app.config)
+def make_celery(app):
+    broker_url = os.environ.get('CELERY_BROKER_URL')
+    if not broker_url:
+        raise RuntimeError("CELERY_BROKER_URL environment variable is not set.")
 
-class ContextTask(celery.Task):
-    def __call__(self, *args, **kwargs):
-        with app.app_context():
-            initialize_all_services()
-            return self.run(*args, **kwargs)
-celery.Task = ContextTask
+    celery = Celery(app.import_name, backend=broker_url, broker=broker_url)
+    celery.conf.update(app.config)
 
-# --- Helper for Manual Preflight Response ---
-def _build_cors_preflight_response():
-    response = make_response()
-    response.headers.add("Access-Control-Allow-Origin", "*")
-    response.headers.add('Access-Control-Allow-Headers', "*")
-    response.headers.add('Access-Control-Allow-Methods', "*")
-    return response
+    class ContextTask(celery.Task):
+        def __call__(self, *args, **kwargs):
+            with app.app_context():
+                initialize_services()
+                return self.run(*args, **kwargs)
+
+    celery.Task = ContextTask
+    return celery
+
+celery = make_celery(app)
+
+# --- Core Logic Functions ---
+def generate_script_from_idea(topic, context, duration):
+    print(f"Generating AI script for topic: {topic}")
+    prompt = (f"You are a professional podcast scriptwriter. Your task is to write a compelling and engaging podcast script. "
+              f"The script should be approximately {duration} in length. The topic of the podcast is: '{topic}'. "
+              f"Here is some additional context: '{context}'. Please provide only the script content, without any "
+              f"introductory or concluding remarks about the script itself. Just write the words to be spoken.")
+    response = genai_model.generate_content(prompt)
+    print("AI script generated successfully.")
+    return response.text
+
+def generate_podcast_audio(text_content, output_filepath):
+    print(f"Generating audio for text (first 100 chars): {text_content[:100]}...")
+    synthesis_input = texttospeech.SynthesisInput(text=text_content)
+    voice = texttospeech.VoiceSelectionParams(language_code="en-US", ssml_gender=texttospeech.SsmlVoiceGender.NEUTRAL)
+    audio_config = texttospeech.AudioConfig(audio_encoding=texttospeech.AudioEncoding.MP3)
+    response = tts_client.synthesize_speech(input=synthesis_input, voice=voice, audio_config=audio_config)
+    with open(output_filepath, "wb") as out:
+        out.write(response.audio_content)
+    print(f"Audio content written to file '{output_filepath}'")
+    return True
+
+def _finalize_job(job_id, local_audio_path, generated_script=None):
+    print(f"Finalizing job {job_id}...")
+    storage_path = f"podcasts/{job_id}.mp3"
+    blob = bucket.blob(storage_path)
+    
+    print(f"Uploading {local_audio_path} to {storage_path}...")
+    blob.upload_from_filename(local_audio_path)
+    blob.make_public()
+    podcast_url = blob.public_url
+    print(f"Upload complete. Public URL: {podcast_url}")
+
+    os.remove(local_audio_path)
+    print(f"Removed temporary file: {local_audio_path}")
+
+    update_data = {'status': 'complete', 'podcast_url': podcast_url, 'completed_at': firestore.SERVER_TIMESTAMP}
+    if generated_script:
+        update_data['generated_script'] = generated_script
+
+    db.collection('podcasts').document(job_id).update(update_data)
+    print(f"Firestore document for job {job_id} updated to complete.")
+    return {"status": "Complete", "podcast_url": podcast_url}
+
+# --- Celery Task Definitions ---
+@celery.task
+def generate_podcast_from_idea_task(job_id, topic, context, duration):
+    print(f"WORKER: Started IDEA job {job_id} for topic: {topic}")
+    doc_ref = db.collection('podcasts').document(job_id)
+    output_filepath = f"{job_id}.mp3"
+    try:
+        doc_ref.set({'topic': topic, 'context': context, 'source_type': 'idea', 'duration': duration, 'status': 'processing', 'created_at': firestore.SERVER_TIMESTAMP})
+        podcast_script = generate_script_from_idea(topic, context, duration)
+        if not podcast_script: raise Exception("Script generation failed.")
+        if not generate_podcast_audio(podcast_script, output_filepath): raise Exception("Audio generation failed.")
+        return _finalize_job(job_id, output_filepath, generated_script=podcast_script)
+    except Exception as e:
+        print(f"ERROR in Celery task {job_id}: {e}")
+        doc_ref.update({'status': 'failed', 'error_message': str(e)})
+        if os.path.exists(output_filepath): os.remove(output_filepath)
+        return {"status": "Failed", "error": str(e)}
 
 # --- API Endpoints ---
-@app.route("/generate-from-idea", methods=["POST", "OPTIONS"])
-def handle_idea_generation():
-    # This is the critical change to manually handle the preflight request
-    if request.method == "OPTIONS": 
-        return _build_cors_preflight_response()
+@app.before_request
+def before_first_request_func():
+    initialize_services()
 
-    # This is the existing logic for the POST request
+@app.route("/generate-from-idea", methods=["POST"])
+def handle_idea_generation():
     data = request.get_json()
-    if not data or 'topic' not in data or 'context' not in data:
-        return jsonify({"error": "Missing topic or context"}), 400
+    if not data or not all(k in data for k in ['topic', 'context']):
+        return jsonify({"error": "topic and context are required"}), 400
     
     job_id = str(uuid.uuid4())
-    generate_podcast_task.delay(
-        job_id, 
-        data['topic'], 
-        data['context'], 
-        data.get('duration', '5 minutes')
+    generate_podcast_from_idea_task.delay(
+        job_id, data['topic'], data['context'], data.get('duration', '5 minutes')
     )
-    return jsonify({"message": "Podcast generation has been queued!", "job_id": job_id}), 202
+    return jsonify({"message": "Podcast generation from idea has been queued!", "job_id": job_id}), 202
 
 @app.route("/podcast-status/<job_id>", methods=["GET"])
 def get_podcast_status(job_id):
     try:
-        doc = db.collection('podcasts').document(job_id).get()
+        doc_ref = db.collection('podcasts').document(job_id)
+        doc = doc_ref.get()
         if not doc.exists:
             return jsonify({"error": "Job not found"}), 404
         return jsonify(doc.to_dict()), 200
     except Exception as e:
         return jsonify({"error": f"An error occurred: {e}"}), 500
 
-# --- Celery Task (Simple, single-speaker) ---
-@celery.task
-def generate_podcast_task(job_id, topic, context, duration):
-    print(f"WORKER: Started SIMPLE job {job_id} for topic: {topic}")
-    doc_ref = db.collection('podcasts').document(job_id)
-    try:
-        doc_ref.set({'topic': topic, 'context': context, 'duration': duration, 'status': 'processing', 'created_at': firestore.SERVER_TIMESTAMP})
-        
-        prompt = (f"You are a professional podcast scriptwriter. Write a compelling and engaging monologue podcast script. "
-                  f"The script should be approximately {duration} in length. The topic is: '{topic}'. "
-                  f"Additional context: '{context}'. Provide only the spoken words for the script.")
-        
-        response = genai_model.generate_content(prompt)
-        podcast_script = response.text
-        if not podcast_script: raise Exception("Script generation failed.")
-
-        synthesis_input = texttospeech.SynthesisInput(text=podcast_script)
-        voice = texttospeech.VoiceSelectionParams(language_code='en-US', name='en-US-WaveNet-J')
-        audio_config = texttospeech.AudioConfig(audio_encoding=texttospeech.AudioEncoding.MP3)
-        
-        audio_response = tts_client.synthesize_speech(input=synthesis_input, voice=voice, audio_config=audio_config)
-        
-        storage_path = f"podcasts/{job_id}.mp3"
-        blob = bucket.blob(storage_path)
-        blob.upload_from_string(audio_response.audio_content, content_type='audio/mpeg')
-        blob.make_public()
-        
-        doc_ref.update({'status': 'complete', 'podcast_url': blob.public_url, 'completed_at': firestore.SERVER_TIMESTAMP, 'generated_script': podcast_script})
-        
-        return {"status": "Complete", "podcast_url": blob.public_url}
-        
-    except Exception as e:
-        print(f"ERROR in Celery task {job_id}: {e}")
-        doc_ref.update({'status': 'failed', 'error_message': str(e)})
-        return {"status": "Failed", "error": str(e)}
-
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(debug=True, port=5000)
+
