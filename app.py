@@ -1,43 +1,36 @@
+# app.py - JSONP Implementation
+
 import os
 import uuid
 import re
-from flask import Flask, request, jsonify
+import json
+from flask import Flask, request, jsonify, Response
 from flask_cors import CORS
 from celery import Celery
 import firebase_admin
 from firebase_admin import credentials, firestore, storage
-from PyPDF2 import PdfReader
+from pydub import AudioSegment
 from google.cloud import texttospeech
 import google.generativeai as genai
-from pydub import AudioSegment
 
-# --- App & CORS Configuration ---
-# Simplified and robust global CORS initialization
 app = Flask(__name__)
+# Standard CORS for the GET status check endpoint
 CORS(app) 
 
 # --- Service Initialization ---
-# Moved initialization into a single, memoized function to prevent re-runs
 _services_initialized = False
 def initialize_all_services():
-    global _services_initialized
+    global _services_initialized, db, bucket, tts_client, genai_model
     if _services_initialized:
         return
-
-    # Firebase
     if not firebase_admin._apps:
         firebase_admin.initialize_app()
     
-    # Set globals
-    global db, bucket, tts_client, genai_model
     db = firestore.client()
     bucket = storage.bucket(os.environ.get('FIREBASE_STORAGE_BUCKET'))
     tts_client = texttospeech.TextToSpeechClient()
-
-    # Gemini
     genai.configure(api_key=os.environ.get('GEMINI_API_KEY'))
     genai_model = genai.GenerativeModel('gemini-1.5-pro-latest')
-    
     _services_initialized = True
     print("All services initialized successfully.")
 
@@ -52,12 +45,10 @@ class ContextTask(celery.Task):
         with app.app_context():
             initialize_all_services()
             return self.run(*args, **kwargs)
-
 celery.Task = ContextTask
 
-# --- Core Logic (Unchanged) ---
+# --- Core Logic Functions (unchanged) ---
 def generate_script(topic, context, duration, num_speakers):
-    # ... same as before
     print(f"Generating AI script for {num_speakers} speaker(s) on topic: {topic}")
     if int(num_speakers) == 1:
         prompt = (f"You are a professional podcast scriptwriter. Write a compelling and engaging monologue podcast script. "
@@ -75,7 +66,6 @@ def generate_script(topic, context, duration, num_speakers):
     return response.text
 
 def generate_multispeaker_audio(script_text, voice1, voice2, job_id):
-    # ... same as before
     print("Starting multi-speaker audio generation...")
     lines = re.split(r'(\[SPEAKER \d\])', script_text)
     combined_audio = AudioSegment.empty()
@@ -103,7 +93,6 @@ def generate_multispeaker_audio(script_text, voice1, voice2, job_id):
     return final_filename
 
 def generate_singlespeaker_audio(script_text, voice_name, output_filepath):
-    # ... same as before
     print(f"Generating single-speaker audio with voice {voice_name}...")
     synthesis_input = texttospeech.SynthesisInput(text=script_text)
     voice = texttospeech.VoiceSelectionParams(language_code=voice_name.split('-W')[0], name=voice_name)
@@ -115,7 +104,6 @@ def generate_singlespeaker_audio(script_text, voice_name, output_filepath):
     return output_filepath
 
 def _finalize_job(job_id, local_audio_path, generated_script):
-    # ... same as before
     print(f"Finalizing job {job_id}...")
     storage_path = f"podcasts/{job_id}.mp3"
     blob = bucket.blob(storage_path)
@@ -123,12 +111,7 @@ def _finalize_job(job_id, local_audio_path, generated_script):
     blob.make_public()
     podcast_url = blob.public_url
     os.remove(local_audio_path)
-    update_data = {
-        'status': 'complete', 
-        'podcast_url': podcast_url, 
-        'completed_at': firestore.SERVER_TIMESTAMP,
-        'generated_script': generated_script
-    }
+    update_data = {'status': 'complete', 'podcast_url': podcast_url, 'completed_at': firestore.SERVER_TIMESTAMP, 'generated_script': generated_script}
     db.collection('podcasts').document(job_id).update(update_data)
     print(f"Firestore document for job {job_id} updated to complete.")
     return {"status": "Complete", "podcast_url": podcast_url}
@@ -136,7 +119,6 @@ def _finalize_job(job_id, local_audio_path, generated_script):
 # --- Celery Task ---
 @celery.task
 def generate_podcast_task(job_id, topic, context, duration, num_speakers, voice1, voice2):
-    # ... same as before
     print(f"WORKER: Started job {job_id} for topic: {topic}")
     doc_ref = db.collection('podcasts').document(job_id)
     try:
@@ -156,22 +138,37 @@ def generate_podcast_task(job_id, topic, context, duration, num_speakers, voice1
 # --- API Endpoints ---
 @app.route("/")
 def health_check():
-    """A simple endpoint to confirm the server is running."""
     return "The podcast server is live and running."
 
-@app.route("/generate-from-idea", methods=["POST"])
-def handle_idea_generation():
-    # ... same as before
-    data = request.get_json()
-    if not data or not all(k in data for k in ['topic', 'context', 'num_speakers', 'voice1']):
-        return jsonify({"error": "Missing required fields"}), 400
-    job_id = str(uuid.uuid4())
-    generate_podcast_task.delay(job_id, data['topic'], data['context'], data.get('duration', '5 minutes'),data['num_speakers'],data['voice1'],data.get('voice2'))
-    return jsonify({"message": "Podcast generation has been queued!", "job_id": job_id}), 202
+@app.route("/generate-from-idea-jsonp")
+def handle_idea_generation_jsonp():
+    """Handles job submission via JSONP to bypass CORS."""
+    callback = request.args.get('callback', 'jsonp_callback')
+    try:
+        topic = request.args.get('topic')
+        context = request.args.get('context')
+        num_speakers = request.args.get('num_speakers')
+        voice1 = request.args.get('voice1')
+        voice2 = request.args.get('voice2')
+        duration = request.args.get('duration', '5 minutes')
+
+        if not all([topic, context, num_speakers, voice1, callback]):
+            raise ValueError("Missing required fields")
+
+        job_id = str(uuid.uuid4())
+        generate_podcast_task.delay(job_id, topic, context, duration, num_speakers, voice1, voice2)
+        
+        success_data = {"message": "Podcast generation has been queued!", "job_id": job_id}
+        jsonp_response = f"{callback}({json.dumps(success_data)})"
+        return Response(jsonp_response, mimetype='application/javascript')
+
+    except Exception as e:
+        error_data = {"error": str(e)}
+        jsonp_response = f"{callback}({json.dumps(error_data)})"
+        return Response(jsonp_response, mimetype='application/javascript')
 
 @app.route("/podcast-status/<job_id>", methods=["GET"])
 def get_podcast_status(job_id):
-    # ... same as before
     try:
         doc_ref = db.collection('podcasts').document(job_id)
         doc = doc_ref.get()
@@ -181,9 +178,7 @@ def get_podcast_status(job_id):
     except Exception as e:
         return jsonify({"error": f"An error occurred: {e}"}), 500
 
-# This block is essential for the app to run on its own
 if __name__ == '__main__':
-    # Before the first request, initialize services
     with app.app_context():
         initialize_all_services()
     app.run(debug=True, port=int(os.environ.get("PORT", 8080)))

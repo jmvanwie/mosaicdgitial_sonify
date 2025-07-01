@@ -1,3 +1,207 @@
+Excellent choice. I truly believe this is the right path forward to break through this stubborn issue. Your attitude is perfect for development—persistence is everything.
+
+Let's do this.
+
+This is a comprehensive update to both the backend and the frontend to use the JSONP communication method, which is designed to bypass the type of error we're seeing.
+
+Step 1: Update The Backend (app.py)
+This new version adds a special /generate-from-idea-jsonp endpoint that is built to respond to the new request method from the frontend.
+
+Action: Please replace the entire contents of your app.py file with this code.
+
+Python
+
+# app.py - JSONP Implementation
+
+import os
+import uuid
+import re
+import json
+from flask import Flask, request, jsonify, Response
+from flask_cors import CORS
+from celery import Celery
+import firebase_admin
+from firebase_admin import credentials, firestore, storage
+from pydub import AudioSegment
+from google.cloud import texttospeech
+import google.generativeai as genai
+
+app = Flask(__name__)
+# Standard CORS for the GET status check endpoint
+CORS(app) 
+
+# --- Service Initialization ---
+_services_initialized = False
+def initialize_all_services():
+    global _services_initialized, db, bucket, tts_client, genai_model
+    if _services_initialized:
+        return
+    if not firebase_admin._apps:
+        firebase_admin.initialize_app()
+    
+    db = firestore.client()
+    bucket = storage.bucket(os.environ.get('FIREBASE_STORAGE_BUCKET'))
+    tts_client = texttospeech.TextToSpeechClient()
+    genai.configure(api_key=os.environ.get('GEMINI_API_KEY'))
+    genai_model = genai.GenerativeModel('gemini-1.5-pro-latest')
+    _services_initialized = True
+    print("All services initialized successfully.")
+
+# --- Celery Configuration ---
+celery = Celery(app.import_name, 
+                backend=os.environ.get('CELERY_BROKER_URL'), 
+                broker=os.environ.get('CELERY_BROKER_URL'))
+celery.conf.update(app.config)
+
+class ContextTask(celery.Task):
+    def __call__(self, *args, **kwargs):
+        with app.app_context():
+            initialize_all_services()
+            return self.run(*args, **kwargs)
+celery.Task = ContextTask
+
+# --- Core Logic Functions (unchanged) ---
+def generate_script(topic, context, duration, num_speakers):
+    print(f"Generating AI script for {num_speakers} speaker(s) on topic: {topic}")
+    if int(num_speakers) == 1:
+        prompt = (f"You are a professional podcast scriptwriter. Write a compelling and engaging monologue podcast script. "
+                  f"The script should be approximately {duration} in length. The topic is: '{topic}'. "
+                  f"Additional context: '{context}'. Provide only the spoken words for the script.")
+    else:
+        prompt = (f"You are a professional podcast scriptwriter. Write a compelling and engaging dialogue-based podcast script for two speakers. "
+                  f"The script should be approximately {duration} in length. The topic is: '{topic}'. "
+                  f"Additional context: '{context}'. "
+                  f"IMPORTANT: You MUST format the script by clearly labeling each speaker's lines. Use '[SPEAKER 1]' and '[SPEAKER 2]' to denote who is speaking. For example: "
+                  f"'[SPEAKER 1] Hello and welcome to the show. [SPEAKER 2] It's great to be here.' "
+                  f"Do not include any other text, just the formatted script.")
+    response = genai_model.generate_content(prompt)
+    print("AI script generated successfully.")
+    return response.text
+
+def generate_multispeaker_audio(script_text, voice1, voice2, job_id):
+    print("Starting multi-speaker audio generation...")
+    lines = re.split(r'(\[SPEAKER \d\])', script_text)
+    combined_audio = AudioSegment.empty()
+    temp_files = []
+    for i in range(1, len(lines), 2):
+        speaker_tag = lines[i]
+        text_content = lines[i+1].strip()
+        if not text_content: continue
+        voice_name = voice1 if '1' in speaker_tag else voice2
+        snippet_filename = f"{job_id}_snippet_{i}.mp3"
+        temp_files.append(snippet_filename)
+        synthesis_input = texttospeech.SynthesisInput(text=text_content)
+        voice = texttospeech.VoiceSelectionParams(language_code=voice_name.split('-W')[0], name=voice_name)
+        audio_config = texttospeech.AudioConfig(audio_encoding=texttospeech.AudioEncoding.MP3)
+        response = tts_client.synthesize_speech(input=synthesis_input, voice=voice, audio_config=audio_config)
+        with open(snippet_filename, "wb") as out:
+            out.write(response.audio_content)
+        snippet_audio = AudioSegment.from_mp3(snippet_filename)
+        combined_audio += snippet_audio
+    final_filename = f"{job_id}.mp3"
+    combined_audio.export(final_filename, format="mp3")
+    for f in temp_files:
+        os.remove(f)
+    print("Cleaned up temporary audio snippets.")
+    return final_filename
+
+def generate_singlespeaker_audio(script_text, voice_name, output_filepath):
+    print(f"Generating single-speaker audio with voice {voice_name}...")
+    synthesis_input = texttospeech.SynthesisInput(text=script_text)
+    voice = texttospeech.VoiceSelectionParams(language_code=voice_name.split('-W')[0], name=voice_name)
+    audio_config = texttospeech.AudioConfig(audio_encoding=texttospeech.AudioEncoding.MP3)
+    response = tts_client.synthesize_speech(input=synthesis_input, voice=voice, audio_config=audio_config)
+    with open(output_filepath, "wb") as out:
+        out.write(response.audio_content)
+    print(f"Audio content written to file '{output_filepath}'")
+    return output_filepath
+
+def _finalize_job(job_id, local_audio_path, generated_script):
+    print(f"Finalizing job {job_id}...")
+    storage_path = f"podcasts/{job_id}.mp3"
+    blob = bucket.blob(storage_path)
+    blob.upload_from_filename(local_audio_path)
+    blob.make_public()
+    podcast_url = blob.public_url
+    os.remove(local_audio_path)
+    update_data = {'status': 'complete', 'podcast_url': podcast_url, 'completed_at': firestore.SERVER_TIMESTAMP, 'generated_script': generated_script}
+    db.collection('podcasts').document(job_id).update(update_data)
+    print(f"Firestore document for job {job_id} updated to complete.")
+    return {"status": "Complete", "podcast_url": podcast_url}
+
+# --- Celery Task ---
+@celery.task
+def generate_podcast_task(job_id, topic, context, duration, num_speakers, voice1, voice2):
+    print(f"WORKER: Started job {job_id} for topic: {topic}")
+    doc_ref = db.collection('podcasts').document(job_id)
+    try:
+        doc_ref.set({'topic': topic, 'context': context, 'source_type': 'idea', 'duration': duration, 'status': 'processing', 'created_at': firestore.SERVER_TIMESTAMP,'num_speakers': num_speakers,'voice1': voice1,'voice2': voice2})
+        podcast_script = generate_script(topic, context, duration, num_speakers)
+        if int(num_speakers) == 1:
+            final_audio_path = generate_singlespeaker_audio(podcast_script, voice1, f"{job_id}.mp3")
+        else:
+            final_audio_path = generate_multispeaker_audio(podcast_script, voice1, voice2, job_id)
+        return _finalize_job(job_id, final_audio_path, generated_script=podcast_script)
+    except Exception as e:
+        print(f"ERROR in Celery task {job_id}: {e}")
+        doc_ref.update({'status': 'failed', 'error_message': str(e)})
+        if os.path.exists(f"{job_id}.mp3"): os.remove(f"{job_id}.mp3")
+        return {"status": "Failed", "error": str(e)}
+
+# --- API Endpoints ---
+@app.route("/")
+def health_check():
+    return "The podcast server is live and running."
+
+@app.route("/generate-from-idea-jsonp")
+def handle_idea_generation_jsonp():
+    """Handles job submission via JSONP to bypass CORS."""
+    callback = request.args.get('callback', 'jsonp_callback')
+    try:
+        topic = request.args.get('topic')
+        context = request.args.get('context')
+        num_speakers = request.args.get('num_speakers')
+        voice1 = request.args.get('voice1')
+        voice2 = request.args.get('voice2')
+        duration = request.args.get('duration', '5 minutes')
+
+        if not all([topic, context, num_speakers, voice1, callback]):
+            raise ValueError("Missing required fields")
+
+        job_id = str(uuid.uuid4())
+        generate_podcast_task.delay(job_id, topic, context, duration, num_speakers, voice1, voice2)
+        
+        success_data = {"message": "Podcast generation has been queued!", "job_id": job_id}
+        jsonp_response = f"{callback}({json.dumps(success_data)})"
+        return Response(jsonp_response, mimetype='application/javascript')
+
+    except Exception as e:
+        error_data = {"error": str(e)}
+        jsonp_response = f"{callback}({json.dumps(error_data)})"
+        return Response(jsonp_response, mimetype='application/javascript')
+
+@app.route("/podcast-status/<job_id>", methods=["GET"])
+def get_podcast_status(job_id):
+    try:
+        doc_ref = db.collection('podcasts').document(job_id)
+        doc = doc_ref.get()
+        if not doc.exists:
+            return jsonify({"error": "Job not found"}), 404
+        return jsonify(doc.to_dict()), 200
+    except Exception as e:
+        return jsonify({"error": f"An error occurred: {e}"}), 500
+
+if __name__ == '__main__':
+    with app.app_context():
+        initialize_all_services()
+    app.run(debug=True, port=int(os.environ.get("PORT", 8080)))
+Step 2: Update The Frontend (index.html)
+This new frontend code removes the fetch call and replaces it with the JSONP <script> tag injection method. It looks more complex, but it's a standard, robust pattern.
+
+Action: Please replace the entire contents of your index.html file with this code.
+
+HTML
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -7,7 +211,6 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Comfortaa:wght@400;500;600;700&family=Roboto:wght@400;500&display=swap" rel="stylesheet">
-    
     <style>
         :root {
             --primary-glow-color: #00aaff;
@@ -19,88 +222,26 @@
             --font-display: "Comfortaa", cursive;
             --font-body: "Roboto", sans-serif;
         }
-
-        body {
-            font-family: var(--font-body);
-            background-color: transparent;
-            color: var(--light-outline);
-            margin: 0;
-            padding: 1.5rem;
-        }
-
-        .app-container {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 2.5rem;
-        }
-
-        .form-column, .repository-column {
-            flex: 1;
-            min-width: 350px;
-        }
-
-        .input-group {
-            margin-bottom: 1.5rem;
-        }
-
-        label {
-            display: block;
-            margin-bottom: 0.75rem;
-            font-weight: 500;
-            font-size: 1.3rem;
-            font-family: var(--font-display);
-        }
-
-        .form-input {
-            width: 100%;
-            padding: 18px 20px;
-            border: 2px solid var(--light-outline);
-            background-color: var(--input-bg-color);
-            color: var(--light-outline);
-            border-radius: 10px;
-            font-family: var(--font-display);
-            font-size: 1.2rem;
-            transition: all 0.3s ease;
-            box-sizing: border-box;
-            -webkit-appearance: none;
-            -moz-appearance: none;
-            appearance: none;
-        }
-        
-        select.form-input {
-             background-image: url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%23FFFFFF%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E');
-             background-repeat: no-repeat;
-             background-position: right 1.5rem top 50%;
-             background-size: .65em auto;
-        }
-
+        body { font-family: var(--font-body); background-color: transparent; color: var(--light-outline); margin: 0; padding: 1.5rem; }
+        .app-container { display: flex; flex-wrap: wrap; gap: 2.5rem; }
+        .form-column, .repository-column { flex: 1; min-width: 350px; }
+        .input-group { margin-bottom: 1.5rem; }
+        label { display: block; margin-bottom: 0.75rem; font-weight: 500; font-size: 1.3rem; font-family: var(--font-display); }
+        .form-input { width: 100%; padding: 18px 20px; border: 2px solid var(--light-outline); background-color: var(--input-bg-color); color: var(--light-outline); border-radius: 10px; font-family: var(--font-display); font-size: 1.2rem; transition: all 0.3s ease; box-sizing: border-box; -webkit-appearance: none; -moz-appearance: none; appearance: none; }
+        select.form-input { background-image: url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%23FFFFFF%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E'); background-repeat: no-repeat; background-position: right 1.5rem top 50%; background-size: .65em auto; }
         .form-input::placeholder { color: #ccc; opacity: 0.7; font-family: var(--font-display); }
         .form-input:focus { outline: none; border-color: var(--primary-glow-color); box-shadow: 0 0 0 4px rgba(0, 170, 255, 0.35); }
         textarea.form-input { min-height: 150px; resize: vertical; }
-
-        .speaker-controls-container {
-            display: flex;
-            gap: 1.5rem;
-            flex-wrap: wrap;
-        }
-        
-        .speaker-controls-container .input-group {
-            flex: 1;
-            min-width: 150px;
-        }
-
+        .speaker-controls-container { display: flex; gap: 1.5rem; flex-wrap: wrap; }
+        .speaker-controls-container .input-group { flex: 1; min-width: 150px; }
         .file-drop-area { margin-top: 1rem; border: 3px dashed var(--upload-box-border); border-radius: 10px; padding: 2.5rem 1.5rem; text-align: center; font-family: var(--font-display); font-size: 1.2rem; font-weight: 600; background-color: var(--upload-box-bg); color: var(--upload-box-border); transition: background-color 0.3s ease; }
         .file-drop-area:hover { background-color: #a9b1b8; cursor: pointer; }
         .file-upload-icon svg { width: 40px; height: 40px; margin-bottom: 0.8rem; }
-        
         .generate-btn { background-color: var(--light-outline); color: #000; border: none; padding: 15px 25px; border-radius: 10px; font-size: 1.2rem; font-family: var(--font-display); font-weight: 700; cursor: pointer; transition: all 0.3s ease; width: 100%; margin-top: 1.5rem; }
         .generate-btn:hover { background-color: var(--primary-glow-color); color: var(--white); transform: translateY(-2px); box-shadow: 0 4px 10px rgba(0, 170, 255, 0.2); }
-
         #status-container { width: 100%; background-color: #333; border: 2px solid var(--light-outline); border-radius: 10px; margin-top: 1.5rem; padding: 5px; box-sizing: border-box; display: none; }
         #progress-bar { width: 0%; height: 30px; background: linear-gradient(90deg, #007bff, var(--primary-glow-color)); border-radius: 5px; display: flex; align-items: center; justify-content: center; color: var(--white); font-family: var(--font-body); font-weight: 700; white-space: nowrap; overflow: hidden; transition: width 0.5s ease-in-out; }
-
         #speaker-2-voice-group { display: none; }
-        
         .repository-title { font-family: var(--font-display); font-size: 1.5rem; font-weight: 500; border-bottom: 2px solid var(--light-outline); padding-bottom: 0.5rem; margin-bottom: 1rem;}
         #repository-list { display: flex; flex-direction: column; gap: 1rem; }
         .repository-item { background-color: rgba(255, 255, 255, 0.05); border-radius: 8px; padding: 1rem; border: 1px solid rgba(255, 255, 255, 0.2); display: flex; align-items: center; gap: 1rem; }
@@ -110,7 +251,6 @@
     </style>
 </head>
 <body>
-
     <div class="app-container">
         <div class="form-column">
             <div class="input-group">
@@ -121,17 +261,14 @@
                 <label for="context">Context / Main Points</label>
                 <textarea id="context" class="form-input" placeholder="Type your script or ideas here..."></textarea>
             </div>
-            
             <div class="speaker-controls-container">
                 <div class="input-group"><label for="num-speakers">Speakers</label><select id="num-speakers" class="form-input" onchange="toggleSpeaker2()"><option value="1">1 Speaker</option><option value="2">2 Speakers</option></select></div>
                 <div class="input-group"><label for="speaker-1-voice">Speaker 1 Voice</label><select id="speaker-1-voice" class="form-input"><option value="en-US-WaveNet-J">The Charismatic Host (Male)</option><option value="en-US-WaveNet-H">The Warm Host (Female)</option><option value="en-US-WaveNet-D">The Professional Announcer (Male)</option><option value="en-US-WaveNet-F">The Clear Announcer (Female)</option><option value="en-GB-WaveNet-C">The British Broadcaster (Female)</option><option value="en-AU-WaveNet-B">The Australian Storyteller (Male)</option></select></div>
             </div>
-            
             <div class="input-group" id="speaker-2-voice-group">
                 <label for="speaker-2-voice">Speaker 2 Voice</label>
                 <select id="speaker-2-voice" class="form-input"><option value="en-US-WaveNet-H">The Warm Host (Female)</option><option value="en-US-WaveNet-J">The Charismatic Host (Male)</option><option value="en-US-WaveNet-F">The Clear Announcer (Female)</option><option value="en-US-WaveNet-D">The Professional Announcer (Male)</option><option value="en-GB-WaveNet-C">The British Broadcaster (Female)</option><option value="en-AU-WaveNet-B">The Australian Storyteller (Male)</option></select>
             </div>
-
             <div class="file-drop-area"><div class="file-upload-icon"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 2C6.48 2 2 6.48 2 12C2 17.52 6.48 22 12 22C17.52 22 22 17.52 22 12C22 6.48 17.52 2 12 2ZM12 20C7.59 20 4 16.41 4 12C4 7.59 7.59 4 12 4C16.41 4 20 7.59 20 12C20 16.41 16.41 20 12 20ZM13 12V16H11V12H8L12 8L16 12H13Z" fill="#525e75"/></svg></div>Drag & drop a file, or click to upload</div>
             <button onclick="submitJob()" class="generate-btn">Create My Podcast</button>
             <div id="status-container" style="display: none;"><div id="progress-bar"></div></div>
@@ -145,26 +282,7 @@
     <script>
         const RENDER_API_URL = "https://mosaicdgitial-sonify-ws.onrender.com";
 
-        function toggleSpeaker2() {
-            const numSpeakers = document.getElementById('num-speakers').value;
-            const speaker2Group = document.getElementById('speaker-2-voice-group');
-            speaker2Group.style.display = (numSpeakers === '2') ? 'block' : 'none';
-        }
-        
-        function updateStatus(message, percentage) {
-            const statusContainer = document.getElementById('status-container');
-            const progressBar = document.getElementById('progress-bar');
-            statusContainer.style.display = 'block';
-            progressBar.textContent = message;
-            progressBar.style.width = percentage + '%';
-            // Make bar red on 100% and failed message
-            if (percentage === 100 && (message.toLowerCase().includes('failed') || message.toLowerCase().includes('error'))) {
-                 document.getElementById('progress-bar').style.background = 'linear-gradient(90deg, #ff416c, #ff4b2b)';
-            } else {
-                 document.getElementById('progress-bar').style.background = 'linear-gradient(90deg, #007bff, var(--primary-glow-color))';
-            }
-        }
-
+        // --- NEW JSONP SUBMIT FUNCTION ---
         function submitJob() {
             const payload = {
                 topic: document.getElementById('topic').value,
@@ -182,24 +300,59 @@
             
             updateStatus('Submitting job...', 20);
 
-            fetch(`${RENDER_API_URL}/generate-from-idea`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            })
-            .then(response => response.json())
-            .then(data => {
+            // 1. Define the global callback function that the server's response will call
+            window.jsonp_callback = function(data) {
                 if (data.job_id) {
                     updateStatus(`Job Queued: ${data.job_id}. Processing...`, 40);
                     pollForStatus(data.job_id);
                 } else {
-                     updateStatus('Error: ' + (data.error || 'Unknown'), 100);
+                    updateStatus('Error: ' + (data.error || 'Unknown'), 100);
                 }
-            })
-            .catch(err => {
-                console.error('Error submitting job:', err);
-                updateStatus('Error: ' + err.message, 100);
+                
+                // 3. Clean up the script tag and the callback function from the page
+                document.body.removeChild(script);
+                delete window.jsonp_callback;
+            };
+
+            // 2. Create and inject the script tag
+            const script = document.createElement('script');
+            const params = new URLSearchParams({
+                ...payload,
+                callback: 'jsonp_callback' // Tell the server our function name
             });
+            
+            script.src = `${RENDER_API_URL}/generate-from-idea-jsonp?${params.toString()}`;
+            
+            // Handle script injection errors (e.g., server is down)
+            script.onerror = function() {
+                updateStatus('Error: Failed to communicate with the server.', 100);
+                if (document.body.contains(script)) {
+                    document.body.removeChild(script);
+                }
+                delete window.jsonp_callback;
+            };
+
+            document.body.appendChild(script);
+        }
+        
+        // --- THE REST OF THE JS IS UNCHANGED ---
+        function toggleSpeaker2() {
+            const numSpeakers = document.getElementById('num-speakers').value;
+            const speaker2Group = document.getElementById('speaker-2-voice-group');
+            speaker2Group.style.display = (numSpeakers === '2') ? 'block' : 'none';
+        }
+        
+        function updateStatus(message, percentage) {
+            const statusContainer = document.getElementById('status-container');
+            const progressBar = document.getElementById('progress-bar');
+            statusContainer.style.display = 'block';
+            progressBar.textContent = message;
+            progressBar.style.width = percentage + '%';
+            if (percentage === 100 && (message.toLowerCase().includes('failed') || message.toLowerCase().includes('error'))) {
+                 document.getElementById('progress-bar').style.background = 'linear-gradient(90deg, #ff416c, #ff4b2b)';
+            } else {
+                 document.getElementById('progress-bar').style.background = 'linear-gradient(90deg, #007bff, var(--primary-glow-color))';
+            }
         }
         
         function pollForStatus(jobId) {
@@ -229,39 +382,31 @@
                         console.error('Error polling status:', err);
                         updateStatus('Error checking status.', 100);
                     });
-            }, 5000); // Poll every 5 seconds
+            }, 5000);
         }
 
         function addPodcastToRepository(data) {
             const repositoryList = document.getElementById('repository-list');
-
             const item = document.createElement('div');
             item.className = 'repository-item';
-
             const artwork = document.createElement('div');
             artwork.className = 'repository-item-artwork';
-
             const details = document.createElement('div');
             details.className = 'repository-item-details';
-
             const title = document.createElement('p');
             title.className = 'repository-item-title';
             title.textContent = data.topic || 'Untitled Podcast';
-            
             const audio = document.createElement('audio');
             audio.controls = true;
             audio.src = data.podcast_url;
             audio.style.width = '100%';
-
             details.appendChild(title);
             details.appendChild(audio);
             item.appendChild(artwork);
             item.appendChild(details);
-
             repositoryList.prepend(item);
         }
 
-        // Ensure the initial state of the speaker 2 dropdown is correct on page load
         document.addEventListener('DOMContentLoaded', toggleSpeaker2);
     </script>
 </body>
