@@ -119,14 +119,12 @@ def generate_podcast_audio(text_content, output_filepath, voice_names=['en-US-Wa
 
     synthesis_input = texttospeech.SynthesisInput(ssml=ssml_content)
     
-    # WORKAROUND: The Google Cloud API seems to have a validation quirk.
-    # It requires a 'voice' parameter to be present, but throws an error if that
-    # voice is a Studio voice when also using SSML <voice> tags.
-    # The solution is to provide a basic, non-premium voice here to pass validation.
-    # The SSML <voice> tags will override this selection for the actual audio generation.
+    # FINAL WORKAROUND: To satisfy the API's validation, we provide a language code
+    # and a gender, but NOT a specific voice name. This prevents conflicts
+    # and allows the SSML <voice> tags to take full control.
     voice_params = texttospeech.VoiceSelectionParams(
         language_code="en-US",
-        name="en-US-Standard-C" # A standard, non-premium voice
+        ssml_gender=texttospeech.SsmlVoiceGender.NEUTRAL
     )
     
     audio_config = texttospeech.AudioConfig(audio_encoding=texttospeech.AudioEncoding.MP3)
@@ -229,3 +227,4 @@ def get_podcast_status(job_id):
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
+
