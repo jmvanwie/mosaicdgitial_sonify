@@ -22,7 +22,7 @@ origins = [
     "http://localhost:8000",
     "http://127.0.0.1:5500"
 ]
-CORS(app, origins=["https://statuesque-tiramisu-4b5936.netlify.app", "https://www.mosaicdigital.ai"])
+CORS(app)
 
 # --- Service Initialization Globals ---
 db = None
