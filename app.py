@@ -1,10 +1,9 @@
-# app.py - JSONP Implementation
+# app.py - Final version serving both Frontend and API
 
 import os
 import uuid
 import re
-import json
-from flask import Flask, request, jsonify, Response
+from flask import Flask, request, jsonify, render_template
 from flask_cors import CORS
 from celery import Celery
 import firebase_admin
@@ -14,7 +13,7 @@ from google.cloud import texttospeech
 import google.generativeai as genai
 
 app = Flask(__name__)
-# Standard CORS for the GET status check endpoint
+# CORS is still good practice for APIs, this simple setup is fine.
 CORS(app) 
 
 # --- Service Initialization ---
@@ -137,35 +136,18 @@ def generate_podcast_task(job_id, topic, context, duration, num_speakers, voice1
 
 # --- API Endpoints ---
 @app.route("/")
-def health_check():
-    return "The podcast server is live and running."
+def serve_frontend():
+    """Serves the main index.html file from the templates folder."""
+    return render_template('index.html')
 
-@app.route("/generate-from-idea-jsonp")
-def handle_idea_generation_jsonp():
-    """Handles job submission via JSONP to bypass CORS."""
-    callback = request.args.get('callback', 'jsonp_callback')
-    try:
-        topic = request.args.get('topic')
-        context = request.args.get('context')
-        num_speakers = request.args.get('num_speakers')
-        voice1 = request.args.get('voice1')
-        voice2 = request.args.get('voice2')
-        duration = request.args.get('duration', '5 minutes')
-
-        if not all([topic, context, num_speakers, voice1, callback]):
-            raise ValueError("Missing required fields")
-
-        job_id = str(uuid.uuid4())
-        generate_podcast_task.delay(job_id, topic, context, duration, num_speakers, voice1, voice2)
-        
-        success_data = {"message": "Podcast generation has been queued!", "job_id": job_id}
-        jsonp_response = f"{callback}({json.dumps(success_data)})"
-        return Response(jsonp_response, mimetype='application/javascript')
-
-    except Exception as e:
-        error_data = {"error": str(e)}
-        jsonp_response = f"{callback}({json.dumps(error_data)})"
-        return Response(jsonp_response, mimetype='application/javascript')
+@app.route("/generate-from-idea", methods=["POST"])
+def handle_idea_generation():
+    data = request.get_json()
+    if not data or not all(k in data for k in ['topic', 'context', 'num_speakers', 'voice1']):
+        return jsonify({"error": "Missing required fields"}), 400
+    job_id = str(uuid.uuid4())
+    generate_podcast_task.delay(job_id, data['topic'], data['context'], data.get('duration', '5 minutes'),data['num_speakers'],data['voice1'],data.get('voice2'))
+    return jsonify({"message": "Podcast generation has been queued!", "job_id": job_id}), 202
 
 @app.route("/podcast-status/<job_id>", methods=["GET"])
 def get_podcast_status(job_id):
