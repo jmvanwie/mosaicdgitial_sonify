@@ -78,16 +78,15 @@
         .form-input:focus { outline: none; border-color: var(--primary-glow-color); box-shadow: 0 0 0 4px rgba(0, 170, 255, 0.35); }
         textarea.form-input { min-height: 150px; resize: vertical; }
 
-        /* --- New container for side-by-side speaker controls --- */
         .speaker-controls-container {
             display: flex;
             gap: 1.5rem;
-            flex-wrap: wrap; /* Allows wrapping on smaller screens */
+            flex-wrap: wrap;
         }
         
         .speaker-controls-container .input-group {
-            flex: 1; /* Each column takes up equal space */
-            min-width: 150px; /* Minimum width before wrapping */
+            flex: 1;
+            min-width: 150px;
         }
 
         .file-drop-area { margin-top: 1rem; border: 3px dashed var(--upload-box-border); border-radius: 10px; padding: 2.5rem 1.5rem; text-align: center; font-family: var(--font-display); font-size: 1.2rem; font-weight: 600; background-color: var(--upload-box-bg); color: var(--upload-box-border); transition: background-color 0.3s ease; }
@@ -97,8 +96,17 @@
         .generate-btn { background-color: var(--light-outline); color: #000; border: none; padding: 15px 25px; border-radius: 10px; font-size: 1.2rem; font-family: var(--font-display); font-weight: 700; cursor: pointer; transition: all 0.3s ease; width: 100%; margin-top: 1.5rem; }
         .generate-btn:hover { background-color: var(--primary-glow-color); color: var(--white); transform: translateY(-2px); box-shadow: 0 4px 10px rgba(0, 170, 255, 0.2); }
 
+        #status-container { width: 100%; background-color: #333; border: 2px solid var(--light-outline); border-radius: 10px; margin-top: 1.5rem; padding: 5px; box-sizing: border-box; display: none; }
+        #progress-bar { width: 0%; height: 30px; background: linear-gradient(90deg, #007bff, var(--primary-glow-color)); border-radius: 5px; display: flex; align-items: center; justify-content: center; color: var(--white); font-family: var(--font-body); font-weight: 700; white-space: nowrap; overflow: hidden; transition: width 0.5s ease-in-out; }
+
         #speaker-2-voice-group { display: none; }
-        .repository-title { font-family: var(--font-display); }
+        
+        .repository-title { font-family: var(--font-display); font-size: 1.5rem; font-weight: 500; border-bottom: 2px solid var(--light-outline); padding-bottom: 0.5rem; margin-bottom: 1rem;}
+        #repository-list { display: flex; flex-direction: column; gap: 1rem; }
+        .repository-item { background-color: rgba(255, 255, 255, 0.05); border-radius: 8px; padding: 1rem; border: 1px solid rgba(255, 255, 255, 0.2); display: flex; align-items: center; gap: 1rem; }
+        .repository-item-artwork { width: 80px; height: 80px; background-color: #333; border-radius: 6px; flex-shrink: 0; }
+        .repository-item-details { flex-grow: 1; }
+        .repository-item-title { font-weight: 500; font-family: var(--font-display); margin: 0 0 0.5rem 0; }
     </style>
 </head>
 <body>
@@ -115,49 +123,18 @@
             </div>
             
             <div class="speaker-controls-container">
-                <div class="input-group">
-                    <label for="num-speakers">Speakers</label>
-                    <select id="num-speakers" class="form-input" onchange="toggleSpeaker2()">
-                        <option value="1">1 Speaker</option>
-                        <option value="2">2 Speakers</option>
-                    </select>
-                </div>
-                <div class="input-group">
-                    <label for="speaker-1-voice">Speaker 1 Voice</label>
-                    <select id="speaker-1-voice" class="form-input">
-                        <option value="en-US-WaveNet-J">The Charismatic Host (Male)</option>
-                        <option value="en-US-WaveNet-H">The Warm Host (Female)</option>
-                        <option value="en-US-WaveNet-D">The Professional Announcer (Male)</option>
-                        <option value="en-US-WaveNet-F">The Clear Announcer (Female)</option>
-                        <option value="en-GB-WaveNet-C">The British Broadcaster (Female)</option>
-                        <option value="en-AU-WaveNet-B">The Australian Storyteller (Male)</option>
-                    </select>
-                </div>
+                <div class="input-group"><label for="num-speakers">Speakers</label><select id="num-speakers" class="form-input" onchange="toggleSpeaker2()"><option value="1">1 Speaker</option><option value="2">2 Speakers</option></select></div>
+                <div class="input-group"><label for="speaker-1-voice">Speaker 1 Voice</label><select id="speaker-1-voice" class="form-input"><option value="en-US-WaveNet-J">The Charismatic Host (Male)</option><option value="en-US-WaveNet-H">The Warm Host (Female)</option><option value="en-US-WaveNet-D">The Professional Announcer (Male)</option><option value="en-US-WaveNet-F">The Clear Announcer (Female)</option><option value="en-GB-WaveNet-C">The British Broadcaster (Female)</option><option value="en-AU-WaveNet-B">The Australian Storyteller (Male)</option></select></div>
             </div>
             
             <div class="input-group" id="speaker-2-voice-group">
                 <label for="speaker-2-voice">Speaker 2 Voice</label>
-                <select id="speaker-2-voice" class="form-input">
-                    <option value="en-US-WaveNet-H">The Warm Host (Female)</option>
-                    <option value="en-US-WaveNet-J">The Charismatic Host (Male)</option>
-                    <option value="en-US-WaveNet-F">The Clear Announcer (Female)</option>
-                    <option value="en-US-WaveNet-D">The Professional Announcer (Male)</option>
-                    <option value="en-GB-WaveNet-C">The British Broadcaster (Female)</option>
-                    <option value="en-AU-WaveNet-B">The Australian Storyteller (Male)</option>
-                </select>
+                <select id="speaker-2-voice" class="form-input"><option value="en-US-WaveNet-H">The Warm Host (Female)</option><option value="en-US-WaveNet-J">The Charismatic Host (Male)</option><option value="en-US-WaveNet-F">The Clear Announcer (Female)</option><option value="en-US-WaveNet-D">The Professional Announcer (Male)</option><option value="en-GB-WaveNet-C">The British Broadcaster (Female)</option><option value="en-AU-WaveNet-B">The Australian Storyteller (Male)</option></select>
             </div>
 
-            <div class="file-drop-area">
-                <div class="file-upload-icon">
-                    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M12 2C6.48 2 2 6.48 2 12C2 17.52 6.48 22 12 22C17.52 22 22 17.52 22 12C22 6.48 17.52 2 12 2ZM12 20C7.59 20 4 16.41 4 12C4 7.59 7.59 4 12 4C16.41 4 20 7.59 20 12C20 16.41 16.41 20 12 20ZM13 12V16H11V12H8L12 8L16 12H13Z" fill="#525e75"/>
-                    </svg>
-                </div>
-                Drag & drop a file, or click to upload
-            </div>
+            <div class="file-drop-area"><div class="file-upload-icon"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 2C6.48 2 2 6.48 2 12C2 17.52 6.48 22 12 22C17.52 22 22 17.52 22 12C22 6.48 17.52 2 12 2ZM12 20C7.59 20 4 16.41 4 12C4 7.59 7.59 4 12 4C16.41 4 20 7.59 20 12C20 16.41 16.41 20 12 20ZM13 12V16H11V12H8L12 8L16 12H13Z" fill="#525e75"/></svg></div>Drag & drop a file, or click to upload</div>
             <button onclick="submitJob()" class="generate-btn">Create My Podcast</button>
-            <div id="status-container" style="display: none;">
-                </div>
+            <div id="status-container" style="display: none;"><div id="progress-bar"></div></div>
         </div>
         <div class="repository-column">
              <h2 class="repository-title">Generated Podcasts</h2>
@@ -171,16 +148,120 @@
         function toggleSpeaker2() {
             const numSpeakers = document.getElementById('num-speakers').value;
             const speaker2Group = document.getElementById('speaker-2-voice-group');
-            // The logic here is now simpler, just show/hide the dedicated group
             speaker2Group.style.display = (numSpeakers === '2') ? 'block' : 'none';
         }
         
-        function submitJob() { /* ... unchanged ... */ }
-        function updateStatus(message, percentage) { /* ... unchanged ... */ }
-        function pollForStatus(jobId) { /* ... unchanged ... */ }
-        function addPodcastToRepository(data) { /* ... unchanged ... */ }
+        function updateStatus(message, percentage) {
+            const statusContainer = document.getElementById('status-container');
+            const progressBar = document.getElementById('progress-bar');
+            statusContainer.style.display = 'block';
+            progressBar.textContent = message;
+            progressBar.style.width = percentage + '%';
+            // Make bar red on 100% and failed message
+            if (percentage === 100 && (message.toLowerCase().includes('failed') || message.toLowerCase().includes('error'))) {
+                 document.getElementById('progress-bar').style.background = 'linear-gradient(90deg, #ff416c, #ff4b2b)';
+            } else {
+                 document.getElementById('progress-bar').style.background = 'linear-gradient(90deg, #007bff, var(--primary-glow-color))';
+            }
+        }
 
-        // Ensure the initial state is correct on page load
+        function submitJob() {
+            const payload = {
+                topic: document.getElementById('topic').value,
+                context: document.getElementById('context').value,
+                num_speakers: document.getElementById('num-speakers').value,
+                voice1: document.getElementById('speaker-1-voice').value,
+                voice2: document.getElementById('speaker-2-voice').value,
+                duration: "5 minutes"
+            };
+
+            if (!payload.topic || !payload.context) {
+                updateStatus('Please fill out topic and context!', 100);
+                return;
+            }
+            
+            updateStatus('Submitting job...', 20);
+
+            fetch(`${RENDER_API_URL}/generate-from-idea`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.job_id) {
+                    updateStatus(`Job Queued: ${data.job_id}. Processing...`, 40);
+                    pollForStatus(data.job_id);
+                } else {
+                     updateStatus('Error: ' + (data.error || 'Unknown'), 100);
+                }
+            })
+            .catch(err => {
+                console.error('Error submitting job:', err);
+                updateStatus('Error: ' + err.message, 100);
+            });
+        }
+        
+        function pollForStatus(jobId) {
+            const interval = setInterval(() => {
+                fetch(`${RENDER_API_URL}/podcast-status/${jobId}`)
+                    .then(response => {
+                        if (!response.ok) { throw new Error(`HTTP status ${response.status}`); }
+                        return response.json();
+                    })
+                    .then(data => {
+                        if (data.status === 'processing') {
+                            updateStatus('Status: Generating script & audio...', 60);
+                        } else if (data.status === 'complete') {
+                            clearInterval(interval);
+                            updateStatus('Job Complete!', 100);
+                            addPodcastToRepository(data);
+                            setTimeout(() => { 
+                                document.getElementById('status-container').style.display = 'none';
+                            }, 5000);
+                        } else if (data.status === 'failed') {
+                            clearInterval(interval);
+                            updateStatus(`Failed: ${data.error_message || 'Unknown error'}`, 100);
+                        }
+                    })
+                    .catch(err => {
+                        clearInterval(interval);
+                        console.error('Error polling status:', err);
+                        updateStatus('Error checking status.', 100);
+                    });
+            }, 5000); // Poll every 5 seconds
+        }
+
+        function addPodcastToRepository(data) {
+            const repositoryList = document.getElementById('repository-list');
+
+            const item = document.createElement('div');
+            item.className = 'repository-item';
+
+            const artwork = document.createElement('div');
+            artwork.className = 'repository-item-artwork';
+
+            const details = document.createElement('div');
+            details.className = 'repository-item-details';
+
+            const title = document.createElement('p');
+            title.className = 'repository-item-title';
+            title.textContent = data.topic || 'Untitled Podcast';
+            
+            const audio = document.createElement('audio');
+            audio.controls = true;
+            audio.src = data.podcast_url;
+            audio.style.width = '100%';
+
+            details.appendChild(title);
+            details.appendChild(audio);
+            item.appendChild(artwork);
+            item.appendChild(details);
+
+            repositoryList.prepend(item);
+        }
+
+        // Ensure the initial state of the speaker 2 dropdown is correct on page load
         document.addEventListener('DOMContentLoaded', toggleSpeaker2);
     </script>
 </body>
