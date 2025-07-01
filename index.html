@@ -11,6 +11,7 @@
     <style>
         body {
             font-family: 'Inter', sans-serif;
+            background-color: transparent; /* Removed background color */
         }
         .font-display {
             font-family: 'Lexend', sans-serif;
@@ -30,8 +31,8 @@
             background: #718096;
         }
         .loader {
-            border: 4px solid #f3f3f3;
-            border-top: 4px solid #3498db;
+            border: 4px solid rgba(255, 255, 255, 0.3);
+            border-top: 4px solid #ffffff;
             border-radius: 50%;
             width: 24px;
             height: 24px;
@@ -41,9 +42,21 @@
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
+        /* New animation for the status bar */
+        @keyframes pulse-bg {
+            0%, 100% {
+                background-color: rgba(55, 65, 81, 0.7); /* bg-gray-700/70 */
+            }
+            50% {
+                background-color: rgba(75, 85, 99, 0.7); /* bg-gray-600/70 */
+            }
+        }
+        .status-loading {
+            animation: pulse-bg 2s infinite;
+        }
     </style>
 </head>
-<body class="bg-gray-900 text-white">
+<body class="text-white">
 
     <div class="container mx-auto p-4 md:p-8">
         
@@ -52,20 +65,22 @@
             <div class="bg-gray-800/60 backdrop-blur-sm p-6 md:p-8 rounded-2xl shadow-2xl border border-gray-700/50">
                 <div class="space-y-6">
                     <div>
-                        <label for="topic" class="block text-sm font-medium text-gray-300 mb-2 font-display">Topic</label>
-                        <input type="text" id="topic" class="w-full bg-gray-700/80 border border-gray-600 text-white rounded-lg p-3 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition" placeholder="e.g., The Future of Renewable Energy">
+                        <label for="topic" class="block text-base font-medium text-gray-300 mb-2 font-display">Topic</label>
+                        <input type="text" id="topic" class="w-full bg-gray-700/80 border border-gray-600 text-white text-lg rounded-lg p-3 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition" placeholder="e.g., The Future of Renewable Energy">
                     </div>
                     <div>
-                        <label for="context" class="block text-sm font-medium text-gray-300 mb-2 font-display">Context or Idea</label>
-                        <textarea id="context" rows="6" class="w-full bg-gray-700/80 border border-gray-600 text-white rounded-lg p-3 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition" placeholder="Provide a script, key points, or a simple idea..."></textarea>
+                        <label for="context" class="block text-base font-medium text-gray-300 mb-2 font-display">Context or Idea</label>
+                        <textarea id="context" rows="8" class="w-full bg-gray-700/80 border border-gray-600 text-white text-lg rounded-lg p-3 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition" placeholder="Provide a script, key points, or a simple idea..."></textarea>
                     </div>
                     <div>
-                        <button onclick="submitJob()" id="generate-btn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg transition-transform transform hover:scale-105 flex items-center justify-center">
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor"><path d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" /></svg>
-                            Create Podcast
+                        <button onclick="submitJob()" id="generate-btn" class="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-bold py-4 px-4 rounded-lg transition-all duration-300 transform hover:scale-105 hover:shadow-2xl hover:shadow-blue-500/30 flex items-center justify-center text-lg">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.636 5.636a9 9 0 0112.728 0M18.364 18.364A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+                            </svg>
+                            Generate Podcast
                         </button>
                     </div>
-                    <div id="status" class="hidden mt-4 p-4 bg-gray-700 rounded-lg text-center text-sm"></div>
+                    <div id="status" class="hidden mt-4 p-4 rounded-lg text-center text-sm transition-all duration-300"></div>
                 </div>
             </div>
 
@@ -106,7 +121,7 @@
 
             // Disable button and show loading state
             generateBtn.disabled = true;
-            generateBtn.innerHTML = '<div class="loader"></div><span class="ml-2">Generating...</span>';
+            generateBtn.innerHTML = '<div class="loader"></div><span class="ml-3">Generating... Please wait</span>';
             showStatus('Submitting job to the studio...', 'loading');
 
             fetch(`${RENDER_API_URL}/generate-from-idea`, {
@@ -139,7 +154,7 @@
                 fetch(`${RENDER_API_URL}/podcast-status/${jobId}`)
                 .then(response => response.json())
                 .then(data => {
-                    if (data.status) {
+                    if (data.status && data.status !== 'complete' && data.status !== 'failed') {
                         showStatus(`Job Status: ${data.status}...`, 'loading');
                     }
                     
@@ -168,10 +183,10 @@
             }
 
             const item = document.createElement('div');
-            item.className = 'bg-gray-700/50 p-4 rounded-lg flex items-center gap-4 transition-all duration-300 transform';
+            item.className = 'bg-gray-700/50 p-4 rounded-lg flex items-center gap-4 transition-all duration-300 transform scale-95 opacity-0';
             
             const artwork = document.createElement('div');
-            artwork.className = 'w-16 h-16 bg-blue-500 rounded-md flex-shrink-0 flex items-center justify-center';
+            artwork.className = 'w-16 h-16 bg-gradient-to-br from-blue-500 to-purple-600 rounded-md flex-shrink-0 flex items-center justify-center shadow-lg';
             artwork.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.636 5.636a9 9 0 0112.728 0M18.364 18.364A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" /></svg>`;
 
             const details = document.createElement('div');
@@ -194,31 +209,37 @@
             repositoryList.prepend(item);
             
             // Add a subtle animation on entry
-            setTimeout(() => item.classList.add('scale-100'), 50);
+            setTimeout(() => {
+                item.classList.remove('scale-95', 'opacity-0');
+            }, 50);
         }
 
         function showStatus(message, type = 'loading') {
             statusDiv.style.display = 'block';
             statusDiv.textContent = message;
-            statusDiv.className = 'mt-4 p-4 rounded-lg text-center text-sm ';
+            statusDiv.className = 'mt-4 p-4 rounded-lg text-center text-base ';
+
+            // Clear previous animation classes
+            statusDiv.classList.remove('status-loading');
 
             switch(type) {
                 case 'success':
-                    statusDiv.classList.add('bg-green-800', 'text-green-200');
+                    statusDiv.classList.add('bg-green-800/80', 'text-green-200');
                     break;
                 case 'error':
-                    statusDiv.classList.add('bg-red-800', 'text-red-200');
+                    statusDiv.classList.add('bg-red-800/80', 'text-red-200');
                     break;
                 default: // loading
-                    statusDiv.classList.add('bg-gray-700', 'text-gray-300');
+                    statusDiv.classList.add('bg-gray-700/70', 'text-gray-300', 'status-loading');
             }
         }
         
         function resetButton() {
             generateBtn.disabled = false;
-            generateBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor"><path d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" /></svg>Create Podcast';
+            generateBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.636 5.636a9 9 0 0112.728 0M18.364 18.364A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" /></svg>Generate Podcast`;
         }
     </script>
 </body>
 </html>
+
 
