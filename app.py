@@ -1,4 +1,4 @@
-# app.py - Final Production Version (Corrected with Robust Audio Generation)
+# app.py - Final Production Version (Corrected with Robust Audio Generation and Script Cleaning)
 
 import os
 import uuid
@@ -93,12 +93,30 @@ def make_celery(app):
 celery = make_celery(app)
 
 # --- Core Logic Functions ---
+def clean_script_for_tts(script_text):
+    """
+    Removes non-dialogue elements from a generated script.
+    """
+    print("Cleaning script for Text-to-Speech...")
+    # Remove text in parentheses, e.g., (Sound of...)
+    cleaned_text = re.sub(r'\(.*?\)', '', script_text)
+    # Remove text in asterisks, e.g., **Sound of...**
+    cleaned_text = re.sub(r'\*\*.*?\*\*', '', cleaned_text)
+    # Remove speaker labels, e.g., "AI Voice 1:", "AI Voices 1 & 2:"
+    cleaned_text = re.sub(r'AI Voices?(\s\d\s?(&\s?\d)?)?:\s?', '', cleaned_text)
+    # Remove any leading/trailing whitespace from each line
+    cleaned_text = "\n".join([line.strip() for line in cleaned_text.split('\n')])
+    print("Script cleaned.")
+    return cleaned_text
+
 def generate_script_from_idea(topic, context, duration):
     print(f"Generating AI script for topic: {topic}")
-    prompt = (f"You are a professional podcast scriptwriter. Your task is to write a compelling and engaging podcast script. "
-              f"The script should be approximately {duration} in length. The topic of the podcast is: '{topic}'. "
-              f"Here is some additional context: '{context}'. Please provide only the script content, without any "
-              f"introductory or concluding remarks about the script itself. Just write the words to be spoken.")
+    # IMPROVED PROMPT: More explicit instructions to get cleaner output.
+    prompt = (f"You are a professional podcast scriptwriter. Your task is to write a compelling and engaging podcast script "
+              f"for two AI voices. The script should be approximately {duration} in length. The topic of the podcast is: '{topic}'. "
+              f"Here is some additional context: '{context}'. "
+              f"IMPORTANT: Provide ONLY the dialogue to be spoken. Do NOT include any speaker labels (like 'AI Voice 1:'). "
+              f"Do NOT include any sound effect descriptions in parentheses or asterisks. Each speaker's part should be on a new line.")
     response = genai_model.generate_content(prompt)
     print("AI script generated successfully.")
     return response.text
@@ -109,17 +127,18 @@ def generate_podcast_audio(text_content, output_filepath, voice_names=['en-US-Wa
     stitching them together. This is a robust method that avoids complex SSML issues.
     """
     print(f"Generating audio in chunks for voices: {voice_names}")
+    # Filter out empty lines that might result from the cleaning process
     paragraphs = [p.strip() for p in text_content.split('\n') if p.strip()]
     
-    # Initialize an empty audio segment
+    if not paragraphs:
+        raise ValueError("The script is empty after cleaning. Cannot generate audio.")
+
     combined_audio = AudioSegment.empty()
     
-    # Process each paragraph individually
     for i, paragraph in enumerate(paragraphs):
         voice_name = voice_names[i % len(voice_names)]
         print(f"Synthesizing paragraph {i+1}/{len(paragraphs)} with voice {voice_name}...")
         
-        # Each request is simple: just text and a single voice
         synthesis_input = texttospeech.SynthesisInput(text=paragraph)
         voice_params = texttospeech.VoiceSelectionParams(
             language_code="en-US",
@@ -133,13 +152,9 @@ def generate_podcast_audio(text_content, output_filepath, voice_names=['en-US-Wa
             audio_config=audio_config
         )
         
-        # Load the synthesized audio chunk into pydub
         audio_chunk = AudioSegment.from_file(io.BytesIO(response.audio_content), format="mp3")
-        
-        # Append the chunk to the combined audio
         combined_audio += audio_chunk
 
-    # Export the final combined audio to the output file
     print(f"Exporting combined audio to {output_filepath}...")
     combined_audio.export(output_filepath, format="mp3")
     
@@ -175,14 +190,19 @@ def generate_podcast_from_idea_task(job_id, topic, context, duration, voices):
     doc_ref = db.collection('podcasts').document(job_id)
     output_filepath = f"{job_id}.mp3"
     try:
-        doc_ref.set({'topic': topic, 'context': context, 'source_type': 'idea', 'duration': duration, 'status': 'processing', 'created_at': firestore.SERVER_TIMESTAMP, 'voices': voices})
-        podcast_script = generate_script_from_idea(topic, context, duration)
-        if not podcast_script: raise Exception("Script generation failed.")
+        # Generate the original script
+        original_script = generate_script_from_idea(topic, context, duration)
+        if not original_script: raise Exception("Script generation failed.")
         
-        if not generate_podcast_audio(podcast_script, output_filepath, voices): 
+        # Clean the script before audio generation
+        cleaned_script = clean_script_for_tts(original_script)
+        
+        # Generate audio from the cleaned script
+        if not generate_podcast_audio(cleaned_script, output_filepath, voices): 
             raise Exception("Audio generation failed.")
             
-        return _finalize_job(job_id, output_filepath, generated_script=podcast_script)
+        # Finalize the job, saving the ORIGINAL script for user reference
+        return _finalize_job(job_id, output_filepath, generated_script=original_script)
     except Exception as e:
         print(f"ERROR in Celery task {job_id}: {e}")
         doc_ref.update({'status': 'failed', 'error_message': str(e)})
