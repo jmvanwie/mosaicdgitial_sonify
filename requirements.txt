@@ -18,3 +18,5 @@ google-generativeai==0.8.4
 #---Visify Services ---
 google-cloud-aiplatform==1.49.0
 moviepy==1.0.3
+requests==2.31.0
+imageio-ffmpeg==0.4.9
