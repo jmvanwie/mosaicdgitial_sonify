@@ -1,4 +1,4 @@
-# app.py - Visify with Aspect Ratio Selection
+# app.py - Visify with Resilient Image Generation
 
 import os
 import uuid
@@ -6,6 +6,7 @@ import re
 import io
 import json
 import base64
+import requests
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from celery import Celery
@@ -210,8 +211,26 @@ def generate_images_from_prompts(prompts, job_id, aspect_ratio="9:16"):
             image_paths.append(filename)
             print(f"Saved image to {filename}")
         except Exception as e:
-            print(f"FATAL: Could not generate image for prompt '{prompt}'. Error: {e}")
-            raise e
+            # FIX: If an image fails (e.g., safety policy), use a placeholder instead of crashing.
+            print(f"WARNING: Image generation failed for prompt: '{prompt}'. Reason: {e}. Using a placeholder.")
+            try:
+                # Determine placeholder dimensions from aspect ratio
+                width, height = (1080, 1920) # Default to 9:16
+                if aspect_ratio == "1:1":
+                    width, height = (1024, 1024)
+                elif aspect_ratio == "16:9":
+                    width, height = (1920, 1080)
+                
+                placeholder_url = f"https://placehold.co/{width}x{height}/1A1A1A/FFFFFF?text=Visual+Content\\nUnavailable"
+                img_data = requests.get(placeholder_url).content
+                with open(filename, 'wb') as handler:
+                    handler.write(img_data)
+                image_paths.append(filename)
+                print(f"Saved placeholder image to {filename}")
+            except Exception as placeholder_e:
+                print(f"FATAL: Could not even download a placeholder image. Error: {placeholder_e}")
+                # If the placeholder fails, we must skip this image.
+                continue
             
     return image_paths
 
@@ -219,12 +238,15 @@ def assemble_video(image_paths, audio_path, output_path):
     """Assembles a video from a sequence of images and an audio track."""
     print("Assembling video...")
     
+    if not image_paths:
+        raise ValueError("Cannot create video with no images.")
+
     audio = AudioFileClip(audio_path)
     total_duration = audio.duration
-    duration_per_image = total_duration / len(image_paths) if image_paths else 0
+    duration_per_image = total_duration / len(image_paths)
     
     if duration_per_image == 0:
-        raise ValueError("Cannot create video with no images or zero duration.")
+        raise ValueError("Cannot create video with zero duration per image.")
 
     clip = ImageSequenceClip(image_paths, durations=[duration_per_image] * len(image_paths))
     clip = clip.set_audio(audio)
@@ -355,5 +377,3 @@ def get_video_status(job_id):
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
-
-
