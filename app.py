@@ -1,4 +1,4 @@
-# app.py - Final Production Version (Corrected with Robust Audio Generation and Script Cleaning)
+# app.py - Final Production Version (with Marketing Video Persona)
 
 import os
 import uuid
@@ -128,7 +128,7 @@ celery = make_celery(app)
 
 # --- Core Logic Functions ---
 def generate_script_from_idea(topic, context, duration):
-    print(f"Generating AI script for topic: {topic}")
+    print(f"Generating PODCAST script for topic: {topic}")
     prompt = (
         "You are a scriptwriter for a popular podcast. Your task is to write a script for two AI hosts, Trystan (male) and Saylor (female). "
         "The hosts are witty, charismatic, and engaging. The dialogue should feel natural, warm, and have a good back-and-forth conversational flow. "
@@ -146,7 +146,29 @@ def generate_script_from_idea(topic, context, duration):
         "[Trystan] Absolutely. So, at its core, what makes a quantum computer different from the one on your desk?"
     )
     response = genai_model.generate_content(prompt)
-    print("AI script generated successfully.")
+    print("Podcast script generated successfully.")
+    return response.text
+
+def generate_video_script_from_idea(topic, context, duration):
+    print(f"Generating VIDEO script for topic: {topic}")
+    prompt = (
+        "You are a scriptwriter for a high-impact social media marketing video. Your task is to write a script for two professional presenters, Trystan (male) and Saylor (female). "
+        "Their tone should be professional, persuasive, and confident. The dialogue should be concise, impactful, and designed to sell a product or idea. "
+        f"The topic is: '{topic}'. "
+        f"Additional context: '{context}'. "
+        f"The video should be approximately {duration} long. "
+        "--- \n"
+        "IMPORTANT INSTRUCTIONS: \n"
+        "1.  Start each line with the speaker's tag, either '[Trystan]' or '[Saylor]'. \n"
+        "2.  Alternate speakers for each line of dialogue. \n"
+        "3.  Do NOT include any other text, directions, or formatting. \n"
+        "4.  EXAMPLE: \n"
+        "[Trystan] Are you looking to revolutionize your content strategy? \n"
+        "[Saylor] Today, we're introducing a tool that will change everything. \n"
+        "[Trystan] Get ready for Visify, the future of AI-powered video creation."
+    )
+    response = genai_model.generate_content(prompt)
+    print("Video script generated successfully.")
     return response.text
 
 def parse_script(script_text):
@@ -320,7 +342,7 @@ def generate_video_from_idea_task(job_id, topic, context, duration, aspect_ratio
     try:
         doc_ref.set({'topic': topic, 'context': context, 'source_type': 'idea', 'duration': duration, 'status': 'processing', 'aspect_ratio': aspect_ratio, 'created_at': firestore.SERVER_TIMESTAMP})
         
-        original_script = generate_script_from_idea(topic, context, duration)
+        original_script = generate_video_script_from_idea(topic, context, duration)
         voices = ['en-US-Chirp3-HD-Iapetus', 'en-US-Chirp3-HD-Leda']
         generate_podcast_audio(original_script, audio_filepath, voices)
         
@@ -406,3 +428,4 @@ def get_video_status(job_id):
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
+
