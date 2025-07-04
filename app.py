@@ -1,4 +1,4 @@
-# app.py - Visify with Resilient Image Generation
+# app.py - Visify with Optimized Video Rendering
 
 import os
 import uuid
@@ -211,15 +211,11 @@ def generate_images_from_prompts(prompts, job_id, aspect_ratio="9:16"):
             image_paths.append(filename)
             print(f"Saved image to {filename}")
         except Exception as e:
-            # FIX: If an image fails (e.g., safety policy), use a placeholder instead of crashing.
             print(f"WARNING: Image generation failed for prompt: '{prompt}'. Reason: {e}. Using a placeholder.")
             try:
-                # Determine placeholder dimensions from aspect ratio
                 width, height = (1080, 1920) # Default to 9:16
-                if aspect_ratio == "1:1":
-                    width, height = (1024, 1024)
-                elif aspect_ratio == "16:9":
-                    width, height = (1920, 1080)
+                if aspect_ratio == "1:1": width, height = (1024, 1024)
+                elif aspect_ratio == "16:9": width, height = (1920, 1080)
                 
                 placeholder_url = f"https://placehold.co/{width}x{height}/1A1A1A/FFFFFF?text=Visual+Content\\nUnavailable"
                 img_data = requests.get(placeholder_url).content
@@ -229,7 +225,6 @@ def generate_images_from_prompts(prompts, job_id, aspect_ratio="9:16"):
                 print(f"Saved placeholder image to {filename}")
             except Exception as placeholder_e:
                 print(f"FATAL: Could not even download a placeholder image. Error: {placeholder_e}")
-                # If the placeholder fails, we must skip this image.
                 continue
             
     return image_paths
@@ -250,7 +245,15 @@ def assemble_video(image_paths, audio_path, output_path):
 
     clip = ImageSequenceClip(image_paths, durations=[duration_per_image] * len(image_paths))
     clip = clip.set_audio(audio)
-    clip.write_videofile(output_path, codec='libx264', fps=24)
+    
+    # FIX: Optimize for lower memory usage in constrained environments.
+    clip.write_videofile(
+        output_path, 
+        codec='libx264', 
+        fps=24,
+        threads=2, # Use fewer CPU cores
+        preset='ultrafast' # Prioritize speed and low memory over compression
+    )
     print(f"Video assembled and saved to {output_path}")
 
 def _finalize_job(job_id, collection_name, local_file_path, storage_path, generated_script=None, visual_prompts=None):
@@ -377,3 +380,5 @@ def get_video_status(job_id):
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
+
+
