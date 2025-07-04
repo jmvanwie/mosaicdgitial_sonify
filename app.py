@@ -1,18 +1,21 @@
-# app.py - Visify Phase 2: Visual Prompt Generation
+# app.py - Visify Phase 3: Image Generation & Video Assembly
 
 import os
 import uuid
 import re
 import io
 import json
+import base64
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from celery import Celery
 import firebase_admin
 from firebase_admin import credentials, firestore, storage
 from pydub import AudioSegment
-from google.cloud import texttospeech
+from google.cloud import texttospeech, aiplatform
+from google.protobuf import struct_pb2
 import google.generativeai as genai
+from moviepy.editor import ImageSequenceClip, AudioFileClip
 
 # --- App & CORS Configuration ---
 app = Flask(__name__)
@@ -35,15 +38,17 @@ db = None
 bucket = None
 tts_client = None
 genai_model = None
+aip_client = None
 
 def initialize_services():
     """Initializes all external services using environment variables."""
-    global db, bucket, tts_client, genai_model
+    global db, bucket, tts_client, genai_model, aip_client
 
     if not firebase_admin._apps:
         try:
             print("Attempting to initialize Firebase using Application Default Credentials...")
-            firebase_admin.initialize_app() 
+            project_id = os.environ.get('GCP_PROJECT_ID')
+            firebase_admin.initialize_app(options={'projectId': project_id}) 
             db = firestore.client()
             bucket = storage.bucket(os.environ.get('FIREBASE_STORAGE_BUCKET'))
             print("Successfully connected to Firebase.")
@@ -72,6 +77,18 @@ def initialize_services():
         except Exception as e:
             print(f"FATAL: Could not initialize Gemini model: {e}")
             raise e
+    
+    if aip_client is None:
+        try:
+            print("Initializing Google Cloud AI Platform client...")
+            project_id = os.environ.get('GCP_PROJECT_ID')
+            location = 'us-central1'
+            aiplatform.init(project=project_id, location=location)
+            print("AI Platform client initialized.")
+        except Exception as e:
+            print(f"FATAL: Could not initialize AI Platform client: {e}")
+            raise e
+
 
 # --- Celery Configuration ---
 def make_celery(app):
@@ -156,7 +173,6 @@ def generate_visual_prompts(script_text):
     """Takes a script and generates a list of visual prompts using Gemini."""
     print("Generating visual prompts from script...")
     dialogue_only = "\n".join([dialogue for _, dialogue in parse_script(script_text)])
-    
     prompt = (
         "You are a creative director for a marketing agency. Your task is to create a series of visual prompts for an AI image generator. "
         "These visuals will accompany a podcast script. For each line of dialogue, create a vivid, descriptive, and visually interesting prompt that captures the essence of what's being said. "
@@ -168,14 +184,59 @@ def generate_visual_prompts(script_text):
         "IMPORTANT: Respond with ONLY a JSON array of strings. Each string in the array should be an image prompt. The number of prompts must exactly match the number of dialogue lines in the script. "
         'EXAMPLE RESPONSE: ["A vibrant, abstract representation of data flowing through circuits.", "A silhouette of a person looking at a complex holographic interface.", "A minimalist design of a brain with glowing neural networks."]'
     )
-    
     response = genai_model.generate_content(prompt)
     print("Visual prompts generated.")
-    # Clean the response to ensure it's valid JSON
     cleaned_response = response.text.strip().replace("```json", "").replace("```", "")
     return json.loads(cleaned_response)
 
-def _finalize_job(job_id, collection_name, local_file_path, storage_path, generated_script=None):
+def generate_images_from_prompts(prompts, job_id):
+    """Generates images from a list of prompts using Imagen 2 and saves them."""
+    print(f"Generating {len(prompts)} images...")
+    image_paths = []
+    
+    # Initialize the Vertex AI Imagen 2 model
+    model = aiplatform.ImageGenerationModel.from_pretrained("imagegeneration@005")
+    
+    for i, prompt in enumerate(prompts):
+        filename = f"{job_id}_image_{i}.png"
+        print(f"Generating image {i+1}/{len(prompts)} for prompt: {prompt}")
+        try:
+            response = model.generate_images(
+                prompt=prompt,
+                number_of_images=1,
+                aspect_ratio="16:9"
+            )
+            response.images[0].save(location=filename, include_generation_parameters=False)
+            image_paths.append(filename)
+            print(f"Saved image to {filename}")
+        except Exception as e:
+            print(f"Could not generate image for prompt '{prompt}'. Error: {e}")
+            # Add a placeholder or skip? For now, we skip.
+            continue
+            
+    return image_paths
+
+def assemble_video(image_paths, audio_path, output_path):
+    """Assembles a video from a sequence of images and an audio track."""
+    print("Assembling video...")
+    
+    # Calculate duration per image based on total audio length
+    audio = AudioFileClip(audio_path)
+    total_duration = audio.duration
+    duration_per_image = total_duration / len(image_paths) if image_paths else 0
+    
+    if duration_per_image == 0:
+        raise ValueError("Cannot create video with no images or zero duration.")
+
+    # Create video clip from images
+    clip = ImageSequenceClip(image_paths, durations=[duration_per_image] * len(image_paths))
+    
+    # Set the audio and write the final video file
+    clip = clip.set_audio(audio)
+    clip.write_videofile(output_path, codec='libx264', fps=24)
+    print(f"Video assembled and saved to {output_path}")
+
+def _finalize_job(job_id, collection_name, local_file_path, storage_path, generated_script=None, visual_prompts=None):
     """Finalizes a job by uploading the file and updating Firestore."""
     print(f"Finalizing job {job_id} in collection {collection_name}...")
     blob = bucket.blob(storage_path)
@@ -192,6 +253,8 @@ def _finalize_job(job_id, collection_name, local_file_path, storage_path, genera
     update_data = {'status': 'complete', 'url': public_url, 'completed_at': firestore.SERVER_TIMESTAMP}
     if generated_script:
         update_data['generated_script'] = generated_script
+    if visual_prompts:
+        update_data['visual_prompts'] = visual_prompts
 
     db.collection(collection_name).document(job_id).update(update_data)
     print(f"Firestore document for job {job_id} updated to complete.")
@@ -219,32 +282,41 @@ def generate_podcast_from_idea_task(job_id, topic, context, duration, voices):
 def generate_video_from_idea_task(job_id, topic, context, duration):
     print(f"WORKER: Started VIDEO job {job_id} for topic: {topic}")
     doc_ref = db.collection('videos').document(job_id)
+    audio_filepath = f"{job_id}_audio.mp3"
+    video_filepath = f"{job_id}_video.mp4"
+    image_paths = []
+    
     try:
         doc_ref.set({'topic': topic, 'context': context, 'source_type': 'idea', 'duration': duration, 'status': 'processing', 'created_at': firestore.SERVER_TIMESTAMP})
         
-        # Step 1: Generate the script
+        # Step 1: Generate script
         original_script = generate_script_from_idea(topic, context, duration)
         
-        # Step 2: Generate the visual prompts
+        # Step 2: Generate audio
+        voices = ['en-US-Chirp3-HD-Iapetus', 'en-US-Chirp3-HD-Leda']
+        generate_podcast_audio(original_script, audio_filepath, voices)
+        
+        # Step 3: Generate visual prompts
         visual_prompts = generate_visual_prompts(original_script)
-        print("Generated Visual Prompts:", visual_prompts)
         
-        # Placeholder for future steps
-        # audio_filepath = generate_podcast_audio(...)
-        # images = generate_images_from_prompts(visual_prompts)
-        # video_filepath = assemble_video(audio_filepath, images)
-        # return _finalize_job(...)
+        # Step 4: Generate images
+        image_paths = generate_images_from_prompts(visual_prompts, job_id)
         
-        # For now, we'll just mark it as complete to test the workflow.
-        doc_ref.update({
-            'status': 'complete_placeholder',
-            'message': 'Visual prompt generation successful. Image/video generation next.',
-            'generated_script': original_script,
-            'visual_prompts': visual_prompts
-        })
+        # Step 5: Assemble video
+        assemble_video(image_paths, audio_filepath, video_filepath)
+        
+        # Step 6: Finalize job
+        return _finalize_job(job_id, 'videos', video_filepath, f"videos/{video_filepath}", generated_script=original_script, visual_prompts=visual_prompts)
+
     except Exception as e:
         print(f"ERROR in video task {job_id}: {e}")
         doc_ref.update({'status': 'failed', 'error_message': str(e)})
+        return {"status": "Failed", "error": str(e)}
+    finally:
+        # Clean up temporary files
+        if os.path.exists(audio_filepath): os.remove(audio_filepath)
+        for path in image_paths:
+            if os.path.exists(path): os.remove(path)
 
 # --- API Endpoints ---
 @app.before_request
@@ -285,7 +357,6 @@ def get_podcast_status(job_id):
     except Exception as e:
         return jsonify({"error": f"An error occurred: {e}"}), 500
 
-# We will need a similar status endpoint for videos
 @app.route("/video-status/<job_id>", methods=["GET"])
 def get_video_status(job_id):
     try:
