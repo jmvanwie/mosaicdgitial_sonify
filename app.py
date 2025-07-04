@@ -195,7 +195,6 @@ def generate_images_from_prompts(prompts, job_id):
     print(f"Generating {len(prompts)} images...")
     image_paths = []
     
-    # FIX: Initialize the Imagen model from the correct module
     model = ImageGenerationModel.from_pretrained("imagegeneration@005")
     
     for i, prompt in enumerate(prompts):
@@ -211,9 +210,10 @@ def generate_images_from_prompts(prompts, job_id):
             image_paths.append(filename)
             print(f"Saved image to {filename}")
         except Exception as e:
-            print(f"Could not generate image for prompt '{prompt}'. Error: {e}")
-            # Add a placeholder or skip? For now, we skip.
-            continue
+            # FIX: Re-raise the exception to stop the task and report the actual error.
+            # This provides better debugging information than the downstream "Cannot create video" error.
+            print(f"FATAL: Could not generate image for prompt '{prompt}'. Error: {e}")
+            raise e
             
     return image_paths
 
