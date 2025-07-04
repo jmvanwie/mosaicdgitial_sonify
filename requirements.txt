@@ -14,3 +14,7 @@ pydub==0.25.1
 firebase-admin==6.5.0
 google-cloud-texttospeech==2.17.1
 google-generativeai==0.8.4
+
+#---Visify Services ---
+google-cloud-aiplatform==1.49.0
+moviepy==1.0.3
