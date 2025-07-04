@@ -1,4 +1,4 @@
-# app.py - Visify Phase 3: Image Generation & Video Assembly
+# app.py - Visify with Aspect Ratio Selection
 
 import os
 import uuid
@@ -190,9 +190,9 @@ def generate_visual_prompts(script_text):
     cleaned_response = response.text.strip().replace("```json", "").replace("```", "")
     return json.loads(cleaned_response)
 
-def generate_images_from_prompts(prompts, job_id):
+def generate_images_from_prompts(prompts, job_id, aspect_ratio="9:16"):
     """Generates images from a list of prompts using Imagen 2 and saves them."""
-    print(f"Generating {len(prompts)} images...")
+    print(f"Generating {len(prompts)} images with aspect ratio {aspect_ratio}...")
     image_paths = []
     
     model = ImageGenerationModel.from_pretrained("imagegeneration@005")
@@ -204,15 +204,12 @@ def generate_images_from_prompts(prompts, job_id):
             response = model.generate_images(
                 prompt=prompt,
                 number_of_images=1,
-                # FIX: Use specific dimensions instead of the aspect_ratio string
-                width=1024,
-                height=576
+                aspect_ratio=aspect_ratio
             )
             response.images[0].save(location=filename, include_generation_parameters=False)
             image_paths.append(filename)
             print(f"Saved image to {filename}")
         except Exception as e:
-            # Re-raise the exception to stop the task and report the actual error.
             print(f"FATAL: Could not generate image for prompt '{prompt}'. Error: {e}")
             raise e
             
@@ -222,7 +219,6 @@ def assemble_video(image_paths, audio_path, output_path):
     """Assembles a video from a sequence of images and an audio track."""
     print("Assembling video...")
     
-    # Calculate duration per image based on total audio length
     audio = AudioFileClip(audio_path)
     total_duration = audio.duration
     duration_per_image = total_duration / len(image_paths) if image_paths else 0
@@ -230,10 +226,7 @@ def assemble_video(image_paths, audio_path, output_path):
     if duration_per_image == 0:
         raise ValueError("Cannot create video with no images or zero duration.")
 
-    # Create video clip from images
     clip = ImageSequenceClip(image_paths, durations=[duration_per_image] * len(image_paths))
-    
-    # Set the audio and write the final video file
     clip = clip.set_audio(audio)
     clip.write_videofile(output_path, codec='libx264', fps=24)
     print(f"Video assembled and saved to {output_path}")
@@ -281,33 +274,22 @@ def generate_podcast_from_idea_task(job_id, topic, context, duration, voices):
         return {"status": "Failed", "error": str(e)}
 
 @celery.task
-def generate_video_from_idea_task(job_id, topic, context, duration):
-    print(f"WORKER: Started VIDEO job {job_id} for topic: {topic}")
+def generate_video_from_idea_task(job_id, topic, context, duration, aspect_ratio):
+    print(f"WORKER: Started VIDEO job {job_id} for topic: {topic} with aspect ratio: {aspect_ratio}")
     doc_ref = db.collection('videos').document(job_id)
     audio_filepath = f"{job_id}_audio.mp3"
     video_filepath = f"{job_id}_video.mp4"
     image_paths = []
     
     try:
-        doc_ref.set({'topic': topic, 'context': context, 'source_type': 'idea', 'duration': duration, 'status': 'processing', 'created_at': firestore.SERVER_TIMESTAMP})
+        doc_ref.set({'topic': topic, 'context': context, 'source_type': 'idea', 'duration': duration, 'status': 'processing', 'aspect_ratio': aspect_ratio, 'created_at': firestore.SERVER_TIMESTAMP})
         
-        # Step 1: Generate script
         original_script = generate_script_from_idea(topic, context, duration)
-        
-        # Step 2: Generate audio
         voices = ['en-US-Chirp3-HD-Iapetus', 'en-US-Chirp3-HD-Leda']
         generate_podcast_audio(original_script, audio_filepath, voices)
-        
-        # Step 3: Generate visual prompts
         visual_prompts = generate_visual_prompts(original_script)
-        
-        # Step 4: Generate images
-        image_paths = generate_images_from_prompts(visual_prompts, job_id)
-        
-        # Step 5: Assemble video
+        image_paths = generate_images_from_prompts(visual_prompts, job_id, aspect_ratio)
         assemble_video(image_paths, audio_filepath, video_filepath)
-        
-        # Step 6: Finalize job
         return _finalize_job(job_id, 'videos', video_filepath, f"videos/{video_filepath}", generated_script=original_script, visual_prompts=visual_prompts)
 
     except Exception as e:
@@ -345,7 +327,8 @@ def handle_video_generation():
     if not data or not all(k in data for k in ['topic', 'context']):
         return jsonify({"error": "topic and context are required"}), 400
     job_id = str(uuid.uuid4())
-    generate_video_from_idea_task.delay(job_id, data['topic'], data['context'], data.get('duration', '1 minute'))
+    aspect_ratio = data.get('aspect_ratio', '9:16') # Default to portrait
+    generate_video_from_idea_task.delay(job_id, data['topic'], data['context'], data.get('duration', '1 minute'), aspect_ratio)
     return jsonify({"message": "Video generation has been queued!", "job_id": job_id}), 202
 
 @app.route("/podcast-status/<job_id>", methods=["GET"])
@@ -372,3 +355,5 @@ def get_video_status(job_id):
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
+
+
