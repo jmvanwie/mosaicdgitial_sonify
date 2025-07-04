@@ -204,14 +204,15 @@ def generate_images_from_prompts(prompts, job_id):
             response = model.generate_images(
                 prompt=prompt,
                 number_of_images=1,
-                aspect_ratio="16:9"
+                # FIX: Use specific dimensions instead of the aspect_ratio string
+                width=1024,
+                height=576
             )
             response.images[0].save(location=filename, include_generation_parameters=False)
             image_paths.append(filename)
             print(f"Saved image to {filename}")
         except Exception as e:
-            # FIX: Re-raise the exception to stop the task and report the actual error.
-            # This provides better debugging information than the downstream "Cannot create video" error.
+            # Re-raise the exception to stop the task and report the actual error.
             print(f"FATAL: Could not generate image for prompt '{prompt}'. Error: {e}")
             raise e
             
