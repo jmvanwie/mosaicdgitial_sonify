@@ -1,4 +1,4 @@
-# app.py - Visify with Hybrid Image/Video Generation
+# app.py - Final Production Version (Corrected with Robust Audio Generation and Script Cleaning)
 
 import os
 import uuid
@@ -224,13 +224,12 @@ def find_and_download_stock_video(keywords, filename):
     if not videos:
         raise ValueError(f"No stock video found for keywords: {keywords}")
     
-    # Get the highest quality portrait video link
     video_url = None
     for item in videos[0].video_files:
         if item.quality == 'hd' and item.height == 1920:
              video_url = item.link
              break
-    if not video_url: # Fallback
+    if not video_url:
         video_url = videos[0].video_files[0].link
 
     print(f"Downloading video from {video_url}")
@@ -244,12 +243,15 @@ def assemble_video(media_paths, audio_path, output_path):
     """Assembles a video from a sequence of images and video clips."""
     print("Assembling video from mixed media...")
     
+    if not media_paths:
+        raise ValueError("Cannot create video with no media.")
+
     audio = AudioFileClip(audio_path)
     total_duration = audio.duration
-    duration_per_clip = total_duration / len(media_paths) if media_paths else 0
+    duration_per_clip = total_duration / len(media_paths)
     
     if duration_per_clip == 0:
-        raise ValueError("Cannot create video with no media or zero duration.")
+        raise ValueError("Cannot create video with zero duration per clip.")
 
     final_clips = []
     for path in media_paths:
@@ -291,8 +293,21 @@ def _finalize_job(job_id, collection_name, local_file_path, storage_path, genera
 # --- Celery Task Definitions ---
 @celery.task
 def generate_podcast_from_idea_task(job_id, topic, context, duration, voices):
-    # ... (This task remains unchanged)
-    
+    print(f"WORKER: Started PODCAST job {job_id} for topic: {topic}")
+    doc_ref = db.collection('podcasts').document(job_id)
+    output_filepath = f"{job_id}.mp3"
+    try:
+        doc_ref.set({'topic': topic, 'context': context, 'source_type': 'idea', 'duration': duration, 'status': 'processing', 'created_at': firestore.SERVER_TIMESTAMP, 'voices': voices})
+        original_script = generate_script_from_idea(topic, context, duration)
+        if not generate_podcast_audio(original_script, output_filepath, voices): 
+            raise Exception("Audio generation failed.")
+        return _finalize_job(job_id, 'podcasts', output_filepath, f"podcasts/{output_filepath}", generated_script=original_script)
+    except Exception as e:
+        print(f"ERROR in podcast task {job_id}: {e}")
+        doc_ref.update({'status': 'failed', 'error_message': str(e)})
+        if os.path.exists(output_filepath): os.remove(output_filepath)
+        return {"status": "Failed", "error": str(e)}
+
 @celery.task
 def generate_video_from_idea_task(job_id, topic, context, duration, aspect_ratio):
     print(f"WORKER: Started HYBRID VIDEO job {job_id} for topic: {topic}")
@@ -338,6 +353,56 @@ def generate_video_from_idea_task(job_id, topic, context, duration, aspect_ratio
             if os.path.exists(path): os.remove(path)
 
 # --- API Endpoints ---
-# ... (API endpoints remain unchanged)
+@app.before_request
+def before_first_request_func():
+    initialize_services()
 
+@app.route("/")
+def index():
+    return jsonify({"message": "Welcome to the Sonify API! The server is running."})
+
+@app.route("/generate-from-idea", methods=["POST"])
+def handle_idea_generation():
+    data = request.get_json()
+    if not data or not all(k in data for k in ['topic', 'context']):
+        return jsonify({"error": "topic and context are required"}), 400
+    job_id = str(uuid.uuid4())
+    voices = data.get('voices', ['en-US-Chirp3-HD-Iapetus', 'en-US-Chirp3-HD-Leda'])
+    generate_podcast_from_idea_task.delay(job_id, data['topic'], data['context'], data.get('duration', '5 minutes'), voices)
+    return jsonify({"message": "Podcast generation has been queued!", "job_id": job_id}), 202
+
+@app.route("/generate-video", methods=["POST"])
+def handle_video_generation():
+    data = request.get_json()
+    if not data or not all(k in data for k in ['topic', 'context']):
+        return jsonify({"error": "topic and context are required"}), 400
+    job_id = str(uuid.uuid4())
+    aspect_ratio = data.get('aspect_ratio', '9:16') # Default to portrait
+    generate_video_from_idea_task.delay(job_id, data['topic'], data['context'], data.get('duration', '1 minute'), aspect_ratio)
+    return jsonify({"message": "Video generation has been queued!", "job_id": job_id}), 202
+
+@app.route("/podcast-status/<job_id>", methods=["GET"])
+def get_podcast_status(job_id):
+    try:
+        doc_ref = db.collection('podcasts').document(job_id)
+        doc = doc_ref.get()
+        if not doc.exists:
+            return jsonify({"error": "Job not found"}), 404
+        return jsonify(doc.to_dict()), 200
+    except Exception as e:
+        return jsonify({"error": f"An error occurred: {e}"}), 500
+
+@app.route("/video-status/<job_id>", methods=["GET"])
+def get_video_status(job_id):
+    try:
+        doc_ref = db.collection('videos').document(job_id)
+        doc = doc_ref.get()
+        if not doc.exists:
+            return jsonify({"error": "Job not found"}), 404
+        return jsonify(doc.to_dict()), 200
+    except Exception as e:
+        return jsonify({"error": f"An error occurred: {e}"}), 500
+
+if __name__ == '__main__':
+    app.run(debug=True, port=5000)
 
