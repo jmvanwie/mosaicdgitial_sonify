@@ -9,14 +9,15 @@ redis==5.0.7
 # --- File & Document Handling ---
 PyPDF2==3.0.1
 pydub==0.25.1
+requests==2.31.0
 
 # --- Google Cloud Services ---
 firebase-admin==6.5.0
 google-cloud-texttospeech==2.17.1
 google-generativeai==0.8.4
-
-#---Visify Services ---
 google-cloud-aiplatform==1.49.0
+
+# --- Video & Image Processing ---
 moviepy==1.0.3
-requests==2.31.0
 imageio-ffmpeg==0.4.9
+opencv-python-headless==4.9.0.80
