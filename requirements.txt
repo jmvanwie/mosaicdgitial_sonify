@@ -19,4 +19,5 @@ google-cloud-aiplatform==1.49.0
 
 # --- Video & Image Processing ---
 moviepy==1.0.3
-imageio[opencv]==2.34.1
+av==12.1.0
+imageio[pyav]==2.34.1
