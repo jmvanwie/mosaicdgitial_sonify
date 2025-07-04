@@ -13,6 +13,7 @@ import firebase_admin
 from firebase_admin import credentials, firestore, storage
 from pydub import AudioSegment
 from google.cloud import texttospeech, aiplatform
+from vertexai.preview.vision_models import ImageGenerationModel
 from google.protobuf import struct_pb2
 import google.generativeai as genai
 from moviepy.editor import ImageSequenceClip, AudioFileClip
@@ -194,8 +195,8 @@ def generate_images_from_prompts(prompts, job_id):
     print(f"Generating {len(prompts)} images...")
     image_paths = []
     
-    # Initialize the Vertex AI Imagen 2 model
-    model = aiplatform.ImageGenerationModel.from_pretrained("imagegeneration@005")
+    # FIX: Initialize the Imagen model from the correct module
+    model = ImageGenerationModel.from_pretrained("imagegeneration@005")
     
     for i, prompt in enumerate(prompts):
         filename = f"{job_id}_image_{i}.png"
