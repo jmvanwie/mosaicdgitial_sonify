@@ -23,4 +23,4 @@ imageio[pyav]==2.34.1
 av==12.1.0
 
 # --- Stock Media ---
-pexels-py==1.0.3
+pexels-api==1.0.1
