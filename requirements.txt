@@ -19,5 +19,6 @@ google-cloud-aiplatform==1.49.0
 
 # --- Video & Image Processing ---
 moviepy==1.0.3
+# FINAL FIX ATTEMPT: Use the pyav plugin for imageio, which is often more self-contained.
 av==12.1.0
 imageio[pyav]==2.34.1
