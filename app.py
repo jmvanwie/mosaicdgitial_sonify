@@ -194,6 +194,7 @@ def generate_visual_plan(script_text):
         "You are a creative director. For each line of a podcast script, decide if a generated AI image or a stock video clip would be more visually engaging. "
         "For an image, create a descriptive prompt. For a video, provide 2-3 search keywords. "
         "The style should be modern, clean, and futuristic. "
+        "IMPORTANT: Prefer using stock video clips for more dynamic scenes, and use AI images for more abstract or specific concepts. Aim for a mix of about 70% video and 30% images. "
         "--- \n"
         "PODCAST SCRIPT: \n"
         f"{dialogue_only}"
@@ -405,4 +406,3 @@ def get_video_status(job_id):
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
-
