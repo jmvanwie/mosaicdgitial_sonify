@@ -1,4 +1,4 @@
-Flask==3.0.3
+lask==3.0.3
 Flask-CORS==4.0.1
 gunicorn==22.0.0
 
@@ -21,6 +21,3 @@ google-cloud-aiplatform==1.49.0
 moviepy==1.0.3
 imageio[pyav]==2.34.1
 av==12.1.0
-
-# --- Stock Media ---
-pexels-api==1.0.1
