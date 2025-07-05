@@ -1,4 +1,6 @@
-# app.py - Final Production Version (with Marketing Video Persona)
+
+
+# app.py - Visify with Pixabay Hybrid Video Generation
 
 import os
 import uuid
@@ -18,7 +20,6 @@ from vertexai.preview.vision_models import ImageGenerationModel
 from google.protobuf import struct_pb2
 import google.generativeai as genai
 from moviepy.editor import ImageSequenceClip, AudioFileClip, VideoFileClip, concatenate_videoclips
-from pexels_api import API
 
 # --- App & CORS Configuration ---
 app = Flask(__name__)
@@ -42,11 +43,11 @@ bucket = None
 tts_client = None
 genai_model = None
 aip_client = None
-pexels_client = None
+pixabay_api_key = None
 
 def initialize_services():
     """Initializes all external services using environment variables."""
-    global db, bucket, tts_client, genai_model, aip_client, pexels_client
+    global db, bucket, tts_client, genai_model, aip_client, pixabay_api_key
 
     if not firebase_admin._apps:
         try:
@@ -93,16 +94,15 @@ def initialize_services():
             print(f"FATAL: Could not initialize AI Platform client: {e}")
             raise e
             
-    if pexels_client is None:
+    if pixabay_api_key is None:
         try:
-            print("Initializing Pexels API client...")
-            pexels_api_key = os.environ.get('PEXELS_API_KEY')
-            if not pexels_api_key:
-                raise ValueError("PEXELS_API_KEY environment variable not set.")
-            pexels_client = API(pexels_api_key)
-            print("Pexels API client initialized.")
+            print("Initializing Pixabay API key...")
+            pixabay_api_key = os.environ.get('PIXABAY_API_KEY')
+            if not pixabay_api_key:
+                raise ValueError("PIXABAY_API_KEY environment variable not set.")
+            print("Pixabay API key loaded.")
         except Exception as e:
-            print(f"FATAL: Could not initialize Pexels client: {e}")
+            print(f"FATAL: Could not initialize Pixabay key: {e}")
             raise e
 
 
@@ -230,30 +230,28 @@ def generate_visual_plan(script_text):
     cleaned_response = response.text.strip().replace("```json", "").replace("```", "")
     return json.loads(cleaned_response)
 
-def generate_image(prompt, filename):
+def generate_image(prompt, filename, aspect_ratio="9:16"):
     """Generates a single image from a prompt."""
     print(f"Generating image for prompt: {prompt}")
     model = ImageGenerationModel.from_pretrained("imagegeneration@005")
-    response = model.generate_images(prompt=prompt, number_of_images=1, aspect_ratio="9:16")
+    response = model.generate_images(prompt=prompt, number_of_images=1, aspect_ratio=aspect_ratio)
     response.images[0].save(location=filename, include_generation_parameters=False)
     print(f"Saved image to {filename}")
     return filename
 
 def find_and_download_stock_video(keywords, filename):
-    """Finds and downloads a stock video from Pexels."""
+    """Finds and downloads a stock video from Pixabay."""
     print(f"Searching for stock video with keywords: {keywords}")
-    pexels_client.search_videos(query=keywords, per_page=1, page=1, orientation='portrait')
-    videos = pexels_client.get_entries()
-    if not videos:
-        raise ValueError(f"No stock video found for keywords: {keywords}")
+    url = f"https://pixabay.com/api/videos/?key={pixabay_api_key}&q={requests.utils.quote(keywords)}&video_type=film&orientation=vertical&per_page=3"
+    response = requests.get(url)
+    response.raise_for_status()
+    data = response.json()
+
+    if not data['hits']:
+        print(f"No stock video found for keywords: {keywords}")
+        return None
     
-    video_url = None
-    for item in videos[0].video_files:
-        if item.quality == 'hd' and item.height == 1920:
-             video_url = item.link
-             break
-    if not video_url:
-        video_url = videos[0].video_files[0].link
+    video_url = data['hits'][0]['videos']['large']['url']
 
     print(f"Downloading video from {video_url}")
     video_data = requests.get(video_url).content
@@ -349,14 +347,21 @@ def generate_video_from_idea_task(job_id, topic, context, duration, aspect_ratio
         visual_plan = generate_visual_plan(original_script)
         
         for i, item in enumerate(visual_plan):
+            filename_base = f"{job_id}_media_{i}"
             try:
-                if item['type'] == 'image':
-                    filename = f"{job_id}_media_{i}.png"
-                    generate_image(item['prompt'], filename)
-                    media_paths.append(filename)
-                elif item['type'] == 'video':
-                    filename = f"{job_id}_media_{i}.mp4"
-                    find_and_download_stock_video(item['keywords'], filename)
+                if item['type'] == 'video':
+                    filename = f"{filename_base}.mp4"
+                    video_path = find_and_download_stock_video(item['keywords'], filename)
+                    if video_path:
+                        media_paths.append(video_path)
+                    else:
+                        print(f"Fallback: No video found for '{item['keywords']}'. Generating image instead.")
+                        filename = f"{filename_base}.png"
+                        generate_image(item['keywords'], filename, aspect_ratio)
+                        media_paths.append(filename)
+                elif item['type'] == 'image':
+                    filename = f"{filename_base}.png"
+                    generate_image(item['prompt'], filename, aspect_ratio)
                     media_paths.append(filename)
             except Exception as e:
                 print(f"Warning: Could not process visual item {i}. Reason: {e}. Skipping.")
@@ -428,4 +433,3 @@ def get_video_status(job_id):
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
-
