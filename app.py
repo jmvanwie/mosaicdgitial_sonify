@@ -1,4 +1,4 @@
-# app.py - Final Production Version (with Memory Optimization)
+# app.py - Final Production Version (with Direct Pexels API Integration)
 
 import os
 import uuid
@@ -284,7 +284,6 @@ def assemble_video(media_paths, audio_path, output_path, aspect_ratio="9:16"):
     if duration_per_clip == 0:
         raise ValueError("Cannot create video with zero duration per clip.")
 
-    # Define standard dimensions based on aspect ratio
     target_size = (1080, 1920) # Default for 9:16
     if aspect_ratio == "1:1":
         target_size = (1080, 1080)
@@ -298,7 +297,6 @@ def assemble_video(media_paths, audio_path, output_path, aspect_ratio="9:16"):
         elif path.endswith('.mp4'):
             clip = VideoFileClip(path).set_duration(duration_per_clip)
         
-        # Resize all clips to the target size for consistency and memory efficiency
         clip = clip.resize(height=target_size[1]) if target_size[0] is None else clip.resize(width=target_size[0])
         final_clips.append(clip)
 
@@ -460,3 +458,4 @@ def get_video_status(job_id):
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
+
