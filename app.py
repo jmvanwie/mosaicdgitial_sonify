@@ -1,4 +1,4 @@
-# app.py - Final Production Version (with Download Timeout)
+# app.py - Final Production Version (with Robust JSON Parsing)
 
 import os
 import uuid
@@ -226,8 +226,13 @@ def generate_visual_plan(script_text):
     
     response = genai_model.generate_content(prompt)
     print("Visual plan generated.")
-    cleaned_response = response.text.strip().replace("```json", "").replace("```", "")
-    return json.loads(cleaned_response)
+    
+    # FIX: Use a regular expression to reliably find the JSON array in the response.
+    json_match = re.search(r'\[.*\]', response.text, re.DOTALL)
+    if not json_match:
+        raise ValueError("Could not find a valid JSON array in the AI response.")
+        
+    return json.loads(json_match.group(0))
 
 def generate_image(prompt, filename, aspect_ratio="9:16"):
     """Generates a single image from a prompt."""
@@ -247,7 +252,6 @@ def find_and_download_stock_video(keywords, filename):
         'per_page': 1,
         'orientation': 'portrait'
     }
-    # Add a timeout to prevent hanging
     response = requests.get("https://api.pexels.com/videos/search", headers=headers, params=params, timeout=30)
     response.raise_for_status()
     data = response.json()
@@ -266,14 +270,13 @@ def find_and_download_stock_video(keywords, filename):
         video_url = video_files[0]['link']
 
     print(f"Downloading video from {video_url}")
-    # Add a timeout to the download request as well
     video_data = requests.get(video_url, timeout=60).content
     with open(filename, 'wb') as handler:
         handler.write(video_data)
     print(f"Saved video to {filename}")
     return filename
 
-def assemble_video_with_ffmpeg(media_paths, audio_path, output_path):
+def assemble_video_with_ffmpeg(media_paths, audio_path, output_path, aspect_ratio="9:16"):
     """Assembles a video using direct FFmpeg commands for memory efficiency."""
     print("Assembling video with FFmpeg...")
 
@@ -465,5 +468,6 @@ def get_video_status(job_id):
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
+
 
 
