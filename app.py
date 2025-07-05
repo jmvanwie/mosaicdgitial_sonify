@@ -1,6 +1,4 @@
-
-
-# app.py - Visify with Pixabay Hybrid Video Generation
+# app.py - Final Production Version (with Memory Optimization)
 
 import os
 import uuid
@@ -20,6 +18,7 @@ from vertexai.preview.vision_models import ImageGenerationModel
 from google.protobuf import struct_pb2
 import google.generativeai as genai
 from moviepy.editor import ImageSequenceClip, AudioFileClip, VideoFileClip, concatenate_videoclips
+from pexels_api import API
 
 # --- App & CORS Configuration ---
 app = Flask(__name__)
@@ -43,11 +42,11 @@ bucket = None
 tts_client = None
 genai_model = None
 aip_client = None
-pixabay_api_key = None
+pexels_client = None
 
 def initialize_services():
     """Initializes all external services using environment variables."""
-    global db, bucket, tts_client, genai_model, aip_client, pixabay_api_key
+    global db, bucket, tts_client, genai_model, aip_client, pexels_client
 
     if not firebase_admin._apps:
         try:
@@ -94,15 +93,16 @@ def initialize_services():
             print(f"FATAL: Could not initialize AI Platform client: {e}")
             raise e
             
-    if pixabay_api_key is None:
+    if pexels_client is None:
         try:
-            print("Initializing Pixabay API key...")
-            pixabay_api_key = os.environ.get('PIXABAY_API_KEY')
-            if not pixabay_api_key:
-                raise ValueError("PIXABAY_API_KEY environment variable not set.")
-            print("Pixabay API key loaded.")
+            print("Initializing Pexels API client...")
+            pexels_api_key = os.environ.get('PEXELS_API_KEY')
+            if not pexels_api_key:
+                raise ValueError("PEXELS_API_KEY environment variable not set.")
+            pexels_client = API(pexels_api_key)
+            print("Pexels API client initialized.")
         except Exception as e:
-            print(f"FATAL: Could not initialize Pixabay key: {e}")
+            print(f"FATAL: Could not initialize Pexels client: {e}")
             raise e
 
 
@@ -240,18 +240,21 @@ def generate_image(prompt, filename, aspect_ratio="9:16"):
     return filename
 
 def find_and_download_stock_video(keywords, filename):
-    """Finds and downloads a stock video from Pixabay."""
+    """Finds and downloads a stock video from Pexels."""
     print(f"Searching for stock video with keywords: {keywords}")
-    url = f"https://pixabay.com/api/videos/?key={pixabay_api_key}&q={requests.utils.quote(keywords)}&video_type=film&orientation=vertical&per_page=3"
-    response = requests.get(url)
-    response.raise_for_status()
-    data = response.json()
-
-    if not data['hits']:
+    pexels_client.search_videos(query=keywords, per_page=1, page=1, orientation='portrait')
+    videos = pexels_client.get_entries()
+    if not videos:
         print(f"No stock video found for keywords: {keywords}")
         return None
     
-    video_url = data['hits'][0]['videos']['large']['url']
+    video_url = None
+    for item in videos[0].video_files:
+        if item.quality == 'hd' and item.height == 1920:
+             video_url = item.link
+             break
+    if not video_url:
+        video_url = videos[0].video_files[0].link
 
     print(f"Downloading video from {video_url}")
     video_data = requests.get(video_url).content
@@ -262,7 +265,7 @@ def find_and_download_stock_video(keywords, filename):
 
 def assemble_video(media_paths, audio_path, output_path):
     """Assembles a video from a sequence of images and video clips."""
-    print("Assembling video from mixed media...")
+    print("Assembling video...")
     
     if not media_paths:
         raise ValueError("Cannot create video with no media.")
@@ -277,14 +280,24 @@ def assemble_video(media_paths, audio_path, output_path):
     final_clips = []
     for path in media_paths:
         if path.endswith('.png'):
+            # Use ImageSequenceClip for images to be more memory efficient
             clip = ImageSequenceClip([path], durations=[duration_per_clip])
         elif path.endswith('.mp4'):
-            clip = VideoFileClip(path).set_duration(duration_per_clip)
+            # Load video, resize to a standard 1080p portrait, and set duration
+            clip = VideoFileClip(path).resize(height=1920).set_duration(duration_per_clip)
         final_clips.append(clip)
 
     final_video = concatenate_videoclips(final_clips)
     final_video = final_video.set_audio(audio)
-    final_video.write_videofile(output_path, codec='libx264', fps=24, threads=2, preset='ultrafast')
+    
+    # FINAL FIX: Use memory-optimized settings for video writing
+    final_video.write_videofile(
+        output_path, 
+        codec='libx264', 
+        fps=24,
+        threads=2, # Limit CPU cores to reduce memory pressure
+        preset='ultrafast' # Prioritize speed and low memory over file size
+    )
     print(f"Video assembled and saved to {output_path}")
 
 def _finalize_job(job_id, collection_name, local_file_path, storage_path, generated_script=None, visual_plan=None):
@@ -433,3 +446,4 @@ def get_video_status(job_id):
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
+
