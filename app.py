@@ -1,4 +1,4 @@
-# app.py - Final Production Version (with Direct FFmpeg Video Assembly)
+# app.py - Final Production Version (with Download Timeout)
 
 import os
 import uuid
@@ -18,7 +18,7 @@ from google.cloud import texttospeech, aiplatform
 from vertexai.preview.vision_models import ImageGenerationModel
 from google.protobuf import struct_pb2
 import google.generativeai as genai
-
+from moviepy.editor import ImageSequenceClip, AudioFileClip, VideoFileClip, concatenate_videoclips
 
 # --- App & CORS Configuration ---
 app = Flask(__name__)
@@ -247,7 +247,8 @@ def find_and_download_stock_video(keywords, filename):
         'per_page': 1,
         'orientation': 'portrait'
     }
-    response = requests.get("https://api.pexels.com/videos/search", headers=headers, params=params)
+    # Add a timeout to prevent hanging
+    response = requests.get("https://api.pexels.com/videos/search", headers=headers, params=params, timeout=30)
     response.raise_for_status()
     data = response.json()
 
@@ -265,13 +266,14 @@ def find_and_download_stock_video(keywords, filename):
         video_url = video_files[0]['link']
 
     print(f"Downloading video from {video_url}")
-    video_data = requests.get(video_url).content
+    # Add a timeout to the download request as well
+    video_data = requests.get(video_url, timeout=60).content
     with open(filename, 'wb') as handler:
         handler.write(video_data)
     print(f"Saved video to {filename}")
     return filename
 
-def assemble_video_with_ffmpeg(media_paths, audio_path, output_path, aspect_ratio="9:16"):
+def assemble_video_with_ffmpeg(media_paths, audio_path, output_path):
     """Assembles a video using direct FFmpeg commands for memory efficiency."""
     print("Assembling video with FFmpeg...")
 
@@ -397,7 +399,7 @@ def generate_video_from_idea_task(job_id, topic, context, duration, aspect_ratio
                 print(f"Warning: Could not process visual item {i}. Reason: {e}. Skipping.")
                 continue
 
-        assemble_video_with_ffmpeg(media_paths, audio_filepath, video_filepath, aspect_ratio)
+        assemble_video_with_ffmpeg(media_paths, audio_filepath, video_filepath)
         return _finalize_job(job_id, 'videos', video_filepath, f"videos/{video_filepath}", generated_script=original_script, visual_plan=visual_plan)
 
     except Exception as e:
@@ -463,4 +465,5 @@ def get_video_status(job_id):
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
+
 
