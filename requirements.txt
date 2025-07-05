@@ -1,4 +1,4 @@
-lask==3.0.3
+Flask==3.0.3
 Flask-CORS==4.0.1
 gunicorn==22.0.0
 
