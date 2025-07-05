@@ -17,8 +17,6 @@ google-cloud-texttospeech==2.17.1
 google-generativeai==0.8.4
 google-cloud-aiplatform==1.49.0
 
-# --- Video & Image Processing ---
-moviepy==1.0.3
-imageio==2.34.1
-opencv-python-headless==4.9.0.80
+# Pillow is still needed by other libraries
 Pillow==9.5.0
+
