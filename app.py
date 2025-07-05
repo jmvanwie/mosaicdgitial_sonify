@@ -1,4 +1,4 @@
-# app.py - Final Production Version (with Direct Pexels API Integration)
+# app.py - Final Production Version (with Direct FFmpeg Video Assembly)
 
 import os
 import uuid
@@ -7,6 +7,7 @@ import io
 import json
 import base64
 import requests
+import subprocess
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from celery import Celery
@@ -17,7 +18,7 @@ from google.cloud import texttospeech, aiplatform
 from vertexai.preview.vision_models import ImageGenerationModel
 from google.protobuf import struct_pb2
 import google.generativeai as genai
-from moviepy.editor import ImageSequenceClip, AudioFileClip, VideoFileClip, concatenate_videoclips
+
 
 # --- App & CORS Configuration ---
 app = Flask(__name__)
@@ -270,47 +271,51 @@ def find_and_download_stock_video(keywords, filename):
     print(f"Saved video to {filename}")
     return filename
 
-def assemble_video(media_paths, audio_path, output_path, aspect_ratio="9:16"):
-    """Assembles a video from a sequence of images and video clips."""
-    print("Assembling video...")
-    
+def assemble_video_with_ffmpeg(media_paths, audio_path, output_path, aspect_ratio="9:16"):
+    """Assembles a video using direct FFmpeg commands for memory efficiency."""
+    print("Assembling video with FFmpeg...")
+
     if not media_paths:
         raise ValueError("Cannot create video with no media.")
 
-    audio = AudioFileClip(audio_path)
-    total_duration = audio.duration
-    duration_per_clip = total_duration / len(media_paths)
-    
-    if duration_per_clip == 0:
-        raise ValueError("Cannot create video with zero duration per clip.")
+    audio_duration = float(subprocess.check_output(['ffprobe', '-i', audio_path, '-show_entries', 'format=duration', '-v', 'quiet', '-of', 'csv=%s' % ("p=0")]))
+    duration_per_clip = audio_duration / len(media_paths)
 
-    target_size = (1080, 1920) # Default for 9:16
-    if aspect_ratio == "1:1":
-        target_size = (1080, 1080)
-    elif aspect_ratio == "16:9":
-        target_size = (1920, 1080)
+    concat_file_path = f"{uuid.uuid4()}_concat.txt"
+    temp_clips = []
 
-    final_clips = []
-    for path in media_paths:
-        if path.endswith('.png'):
-            clip = ImageSequenceClip([path], durations=[duration_per_clip])
-        elif path.endswith('.mp4'):
-            clip = VideoFileClip(path).set_duration(duration_per_clip)
-        
-        clip = clip.resize(height=target_size[1]) if target_size[0] is None else clip.resize(width=target_size[0])
-        final_clips.append(clip)
+    with open(concat_file_path, 'w') as f:
+        for i, path in enumerate(media_paths):
+            temp_output = f"{uuid.uuid4()}_temp_{i}.mp4"
+            
+            if path.endswith('.png'):
+                cmd = [
+                    'ffmpeg', '-loop', '1', '-i', path, '-c:v', 'libx264', '-t', str(duration_per_clip),
+                    '-pix_fmt', 'yuv420p', '-y', temp_output
+                ]
+            elif path.endswith('.mp4'):
+                cmd = [
+                    'ffmpeg', '-i', path, '-t', str(duration_per_clip), '-c:v', 'libx264',
+                    '-pix_fmt', 'yuv420p', '-y', temp_output
+                ]
+            
+            subprocess.run(cmd, check=True)
+            f.write(f"file '{temp_output}'\n")
+            temp_clips.append(temp_output)
 
-    final_video = concatenate_videoclips(final_clips, method="compose")
-    final_video = final_video.set_audio(audio)
-    
-    final_video.write_videofile(
-        output_path, 
-        codec='libx264', 
-        fps=24,
-        threads=2,
-        preset='ultrafast'
-    )
+    final_cmd = [
+        'ffmpeg', '-f', 'concat', '-safe', '0', '-i', concat_file_path,
+        '-i', audio_path, '-c:v', 'libx264', '-c:a', 'aac', '-shortest',
+        '-y', output_path
+    ]
+    subprocess.run(final_cmd, check=True)
+
+    os.remove(concat_file_path)
+    for clip in temp_clips:
+        os.remove(clip)
+
     print(f"Video assembled and saved to {output_path}")
+
 
 def _finalize_job(job_id, collection_name, local_file_path, storage_path, generated_script=None, visual_plan=None):
     """Finalizes a job by uploading the file and updating Firestore."""
@@ -392,7 +397,7 @@ def generate_video_from_idea_task(job_id, topic, context, duration, aspect_ratio
                 print(f"Warning: Could not process visual item {i}. Reason: {e}. Skipping.")
                 continue
 
-        assemble_video(media_paths, audio_filepath, video_filepath, aspect_ratio)
+        assemble_video_with_ffmpeg(media_paths, audio_filepath, video_filepath, aspect_ratio)
         return _finalize_job(job_id, 'videos', video_filepath, f"videos/{video_filepath}", generated_script=original_script, visual_plan=visual_plan)
 
     except Exception as e:
