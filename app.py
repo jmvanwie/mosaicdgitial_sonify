@@ -1,4 +1,4 @@
-# app.py - Final Production Version (with Robust JSON Parsing)
+# app.py - Final Production Version (with Direct FFmpeg Video Assembly)
 
 import os
 import uuid
@@ -18,7 +18,7 @@ from google.cloud import texttospeech, aiplatform
 from vertexai.preview.vision_models import ImageGenerationModel
 from google.protobuf import struct_pb2
 import google.generativeai as genai
-from moviepy.editor import ImageSequenceClip, AudioFileClip, VideoFileClip, concatenate_videoclips
+
 
 # --- App & CORS Configuration ---
 app = Flask(__name__)
@@ -226,12 +226,9 @@ def generate_visual_plan(script_text):
     
     response = genai_model.generate_content(prompt)
     print("Visual plan generated.")
-    
-    # FIX: Use a regular expression to reliably find the JSON array in the response.
     json_match = re.search(r'\[.*\]', response.text, re.DOTALL)
     if not json_match:
         raise ValueError("Could not find a valid JSON array in the AI response.")
-        
     return json.loads(json_match.group(0))
 
 def generate_image(prompt, filename, aspect_ratio="9:16"):
@@ -276,14 +273,14 @@ def find_and_download_stock_video(keywords, filename):
     print(f"Saved video to {filename}")
     return filename
 
-def assemble_video_with_ffmpeg(media_paths, audio_path, output_path, aspect_ratio="9:16"):
+def assemble_video_with_ffmpeg(media_paths, audio_path, output_path):
     """Assembles a video using direct FFmpeg commands for memory efficiency."""
     print("Assembling video with FFmpeg...")
 
     if not media_paths:
         raise ValueError("Cannot create video with no media.")
 
-    audio_duration = float(subprocess.check_output(['ffprobe', '-i', audio_path, '-show_entries', 'format=duration', '-v', 'quiet', '-of', 'csv=%s' % ("p=0")]))
+    audio_duration = AudioSegment.from_mp3(audio_path).duration_seconds
     duration_per_clip = audio_duration / len(media_paths)
 
     concat_file_path = f"{uuid.uuid4()}_concat.txt"
