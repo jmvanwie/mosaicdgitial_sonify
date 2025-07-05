@@ -21,3 +21,6 @@ google-cloud-aiplatform==1.49.0
 moviepy==1.0.3
 imageio[pyav]==2.34.1
 av==12.1.0
+
+# --- Stock Media ---
+pexels-api==1.0.1
