@@ -144,7 +144,11 @@ def generate_podcast_audio(script_text, output_filepath, voice_names):
             language_code=voice_name.split('-')[0] + '-' + voice_name.split('-')[1],
             name=voice_name
         )
-        audio_config = texttospeech.AudioConfig(audio_encoding=texttospeech.AudioEncoding.MP3)
+        # FIX: Specify the sample rate for high-fidelity voices
+        audio_config = texttospeech.AudioConfig(
+            audio_encoding=texttospeech.AudioEncoding.MP3,
+            sample_rate_hertz=24000
+        )
         response = tts_client.synthesize_speech(input=synthesis_input, voice=voice_params, audio_config=audio_config)
         audio_chunk = AudioSegment.from_file(io.BytesIO(response.audio_content), format="mp3")
         combined_audio += audio_chunk + AudioSegment.silent(duration=600)
