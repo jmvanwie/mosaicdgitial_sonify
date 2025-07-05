@@ -1,4 +1,4 @@
-# app.py - Final Production Version (with Direct Pexels API Integration)
+# app.py - Final Production Version (with Memory Optimization)
 
 import os
 import uuid
@@ -270,9 +270,9 @@ def find_and_download_stock_video(keywords, filename):
     print(f"Saved video to {filename}")
     return filename
 
-def assemble_video(media_paths, audio_path, output_path):
+def assemble_video(media_paths, audio_path, output_path, aspect_ratio="9:16"):
     """Assembles a video from a sequence of images and video clips."""
-    print("Assembling video from mixed media...")
+    print("Assembling video...")
     
     if not media_paths:
         raise ValueError("Cannot create video with no media.")
@@ -284,17 +284,34 @@ def assemble_video(media_paths, audio_path, output_path):
     if duration_per_clip == 0:
         raise ValueError("Cannot create video with zero duration per clip.")
 
+    # Define standard dimensions based on aspect ratio
+    target_size = (1080, 1920) # Default for 9:16
+    if aspect_ratio == "1:1":
+        target_size = (1080, 1080)
+    elif aspect_ratio == "16:9":
+        target_size = (1920, 1080)
+
     final_clips = []
     for path in media_paths:
         if path.endswith('.png'):
             clip = ImageSequenceClip([path], durations=[duration_per_clip])
         elif path.endswith('.mp4'):
             clip = VideoFileClip(path).set_duration(duration_per_clip)
+        
+        # Resize all clips to the target size for consistency and memory efficiency
+        clip = clip.resize(height=target_size[1]) if target_size[0] is None else clip.resize(width=target_size[0])
         final_clips.append(clip)
 
-    final_video = concatenate_videoclips(final_clips)
+    final_video = concatenate_videoclips(final_clips, method="compose")
     final_video = final_video.set_audio(audio)
-    final_video.write_videofile(output_path, codec='libx264', fps=24, threads=2, preset='ultrafast')
+    
+    final_video.write_videofile(
+        output_path, 
+        codec='libx264', 
+        fps=24,
+        threads=2,
+        preset='ultrafast'
+    )
     print(f"Video assembled and saved to {output_path}")
 
 def _finalize_job(job_id, collection_name, local_file_path, storage_path, generated_script=None, visual_plan=None):
@@ -377,7 +394,7 @@ def generate_video_from_idea_task(job_id, topic, context, duration, aspect_ratio
                 print(f"Warning: Could not process visual item {i}. Reason: {e}. Skipping.")
                 continue
 
-        assemble_video(media_paths, audio_filepath, video_filepath)
+        assemble_video(media_paths, audio_filepath, video_filepath, aspect_ratio)
         return _finalize_job(job_id, 'videos', video_filepath, f"videos/{video_filepath}", generated_script=original_script, visual_plan=visual_plan)
 
     except Exception as e:
