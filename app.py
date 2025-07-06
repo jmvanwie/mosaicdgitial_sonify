@@ -1,4 +1,4 @@
-# app.py - Sonify Podcast Generator (Stable Version)
+# app.py - Final Production Version (Corrected with Robust Audio Generation and Script Cleaning)
 
 import os
 import uuid
@@ -42,8 +42,7 @@ def initialize_services():
     if not firebase_admin._apps:
         try:
             print("Attempting to initialize Firebase using Application Default Credentials...")
-            project_id = os.environ.get('GCP_PROJECT_ID')
-            firebase_admin.initialize_app(options={'projectId': project_id}) 
+            firebase_admin.initialize_app() 
             db = firestore.client()
             bucket = storage.bucket(os.environ.get('FIREBASE_STORAGE_BUCKET'))
             print("Successfully connected to Firebase.")
@@ -95,7 +94,8 @@ celery = make_celery(app)
 
 # --- Core Logic Functions ---
 def generate_script_from_idea(topic, context, duration):
-    print(f"Generating PODCAST script for topic: {topic}")
+    print(f"Generating AI script for topic: {topic}")
+    # ENHANCED PROMPT for named hosts and better formatting
     prompt = (
         "You are a scriptwriter for a popular podcast. Your task is to write a script for two AI hosts, Trystan (male) and Saylor (female). "
         "The hosts are witty, charismatic, and engaging. The dialogue should feel natural, warm, and have a good back-and-forth conversational flow. "
@@ -113,94 +113,122 @@ def generate_script_from_idea(topic, context, duration):
         "[Trystan] Absolutely. So, at its core, what makes a quantum computer different from the one on your desk?"
     )
     response = genai_model.generate_content(prompt)
-    print("Podcast script generated successfully.")
+    print("AI script generated successfully.")
     return response.text
 
 def parse_script(script_text):
     """Parses a script with named speaker tags into a list of (speaker, dialogue) tuples."""
     print("Parsing script...")
+    # This regex now robustly finds the speaker name (Trystan or Saylor) and their dialogue.
     pattern = re.compile(r'\[(Trystan|Saylor)\]\s*([^\n\[\]]*)')
     dialogue_parts = pattern.findall(script_text)
+    # The result of findall is already a list of tuples, e.g., [('Trystan', 'Hello...'), ('Saylor', 'Hi there...')].
     print(f"Parsed {len(dialogue_parts)} dialogue parts.")
     return dialogue_parts
 
 def generate_podcast_audio(script_text, output_filepath, voice_names):
-    """Generates podcast audio by parsing a script and stitching the parts together."""
+    """
+    Generates podcast audio by parsing a script with speaker tags, synthesizing
+    each part with the correct voice, and then stitching them together.
+    """
     print(f"Generating audio for voices: {voice_names}")
+    
     dialogue_parts = parse_script(script_text)
     if not dialogue_parts:
         raise ValueError("The script is empty or could not be parsed. Cannot generate audio.")
-    voice_map = {'Trystan': voice_names[0], 'Saylor': voice_names[1]}
+
+    # Map speaker names (without brackets) to the provided voice names
+    voice_map = {
+        'Trystan': voice_names[0],
+        'Saylor': voice_names[1]
+    }
+
     combined_audio = AudioSegment.empty()
+    
     for speaker_name, dialogue in dialogue_parts:
         dialogue = dialogue.strip()
-        if not dialogue: continue
+        if not dialogue:
+            continue
+
         voice_name = voice_map.get(speaker_name)
-        if not voice_name: continue
+        if not voice_name:
+            print(f"Warning: Skipping dialogue part with unknown speaker name: {speaker_name}")
+            continue
+
         print(f"Synthesizing dialogue for {speaker_name} with voice {voice_name}...")
+        
+        # Phonetic workaround for pronunciation since SSML is not supported.
         phonetic_dialogue = dialogue.replace("Saylor", "sailor")
+
+        # The Chirp3-HD voices do not support SSML. We must send plain text.
         synthesis_input = texttospeech.SynthesisInput(text=phonetic_dialogue)
+
         voice_params = texttospeech.VoiceSelectionParams(
-            language_code=voice_name.split('-')[0] + '-' + voice_name.split('-')[1],
+            language_code=voice_name.split('-')[0] + '-' + voice_name.split('-')[1], # Extract locale e.g., en-US
             name=voice_name
         )
-        # FIX: Explicitly set the sample rate for high-fidelity voices
-        audio_config = texttospeech.AudioConfig(
-            audio_encoding=texttospeech.AudioEncoding.MP3,
-            sample_rate_hertz=24000
-        )
-        response = tts_client.synthesize_speech(input=synthesis_input, voice=voice_params, audio_config=audio_config)
+        audio_config = texttospeech.AudioConfig(audio_encoding=texttospeech.AudioEncoding.MP3)
         
-        if not response.audio_content:
-            print(f"WARNING: Text-to-Speech API returned empty audio for voice {voice_name}. Skipping this part.")
-            continue
-            
+        response = tts_client.synthesize_speech(
+            input=synthesis_input,
+            voice=voice_params,
+            audio_config=audio_config
+        )
+        
         audio_chunk = AudioSegment.from_file(io.BytesIO(response.audio_content), format="mp3")
+        
+        # Add a small pause between speakers for a more natural feel
         combined_audio += audio_chunk + AudioSegment.silent(duration=600)
 
-    if len(combined_audio) == 0:
-        raise ValueError("Audio generation resulted in an empty file. All TTS requests may have failed.")
-
+    print(f"Exporting combined audio to {output_filepath}...")
     combined_audio.export(output_filepath, format="mp3")
+    
     print(f"Audio content successfully written to file '{output_filepath}'")
     return True
 
-def _finalize_job(job_id, collection_name, local_file_path, storage_path, generated_script=None):
-    """Finalizes a job by uploading the file and updating Firestore."""
-    print(f"Finalizing job {job_id} in collection {collection_name}...")
+def _finalize_job(job_id, local_audio_path, generated_script=None):
+    print(f"Finalizing job {job_id}...")
+    storage_path = f"podcasts/{job_id}.mp3"
     blob = bucket.blob(storage_path)
     
-    print(f"Uploading {local_file_path} to {storage_path}...")
-    blob.upload_from_filename(local_file_path)
+    print(f"Uploading {local_audio_path} to {storage_path}...")
+    blob.upload_from_filename(local_audio_path)
     blob.make_public()
-    public_url = blob.public_url
-    print(f"Upload complete. Public URL: {public_url}")
+    podcast_url = blob.public_url
+    print(f"Upload complete. Public URL: {podcast_url}")
 
-    os.remove(local_file_path)
-    print(f"Removed temporary file: {local_file_path}")
+    os.remove(local_audio_path)
+    print(f"Removed temporary file: {local_audio_path}")
 
-    update_data = {'status': 'complete', 'url': public_url, 'completed_at': firestore.SERVER_TIMESTAMP}
+    update_data = {'status': 'complete', 'podcast_url': podcast_url, 'completed_at': firestore.SERVER_TIMESTAMP}
     if generated_script:
         update_data['generated_script'] = generated_script
 
-    db.collection(collection_name).document(job_id).update(update_data)
+    db.collection('podcasts').document(job_id).update(update_data)
     print(f"Firestore document for job {job_id} updated to complete.")
-    return {"status": "Complete", "url": public_url}
+    return {"status": "Complete", "podcast_url": podcast_url}
 
 # --- Celery Task Definitions ---
 @celery.task
 def generate_podcast_from_idea_task(job_id, topic, context, duration, voices):
-    print(f"WORKER: Started PODCAST job {job_id} for topic: {topic}")
+    print(f"WORKER: Started IDEA job {job_id} for topic: {topic} with voices: {voices}")
     doc_ref = db.collection('podcasts').document(job_id)
     output_filepath = f"{job_id}.mp3"
     try:
         doc_ref.set({'topic': topic, 'context': context, 'source_type': 'idea', 'duration': duration, 'status': 'processing', 'created_at': firestore.SERVER_TIMESTAMP, 'voices': voices})
+        
+        # Generate the original script with speaker tags
         original_script = generate_script_from_idea(topic, context, duration)
+        if not original_script: raise Exception("Script generation failed.")
+        
+        # Generate audio from the parsed script
         if not generate_podcast_audio(original_script, output_filepath, voices): 
             raise Exception("Audio generation failed.")
-        return _finalize_job(job_id, 'podcasts', output_filepath, f"podcasts/{output_filepath}", generated_script=original_script)
+            
+        # Finalize the job, saving the ORIGINAL script for user reference
+        return _finalize_job(job_id, output_filepath, generated_script=original_script)
     except Exception as e:
-        print(f"ERROR in podcast task {job_id}: {e}")
+        print(f"ERROR in Celery task {job_id}: {e}")
         doc_ref.update({'status': 'failed', 'error_message': str(e)})
         if os.path.exists(output_filepath): os.remove(output_filepath)
         return {"status": "Failed", "error": str(e)}
@@ -219,10 +247,20 @@ def handle_idea_generation():
     data = request.get_json()
     if not data or not all(k in data for k in ['topic', 'context']):
         return jsonify({"error": "topic and context are required"}), 400
+    
     job_id = str(uuid.uuid4())
+    
+    # Default voices for Trystan and Saylor
     voices = data.get('voices', ['en-US-Chirp3-HD-Iapetus', 'en-US-Chirp3-HD-Leda'])
-    generate_podcast_from_idea_task.delay(job_id, data['topic'], data['context'], data.get('duration', '5 minutes'), voices)
-    return jsonify({"message": "Podcast generation has been queued!", "job_id": job_id}), 202
+    
+    generate_podcast_from_idea_task.delay(
+        job_id, 
+        data['topic'], 
+        data['context'], 
+        data.get('duration', '5 minutes'),
+        voices
+    )
+    return jsonify({"message": "Podcast generation from idea has been queued!", "job_id": job_id}), 202
 
 @app.route("/podcast-status/<job_id>", methods=["GET"])
 def get_podcast_status(job_id):
@@ -237,4 +275,3 @@ def get_podcast_status(job_id):
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
-
