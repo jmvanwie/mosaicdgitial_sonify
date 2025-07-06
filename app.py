@@ -144,14 +144,23 @@ def generate_podcast_audio(script_text, output_filepath, voice_names):
             language_code=voice_name.split('-')[0] + '-' + voice_name.split('-')[1],
             name=voice_name
         )
-        # FIX: Specify the sample rate for high-fidelity voices
+        # FIX: Explicitly set the sample rate for high-fidelity voices
         audio_config = texttospeech.AudioConfig(
             audio_encoding=texttospeech.AudioEncoding.MP3,
             sample_rate_hertz=24000
         )
         response = tts_client.synthesize_speech(input=synthesis_input, voice=voice_params, audio_config=audio_config)
+        
+        if not response.audio_content:
+            print(f"WARNING: Text-to-Speech API returned empty audio for voice {voice_name}. Skipping this part.")
+            continue
+            
         audio_chunk = AudioSegment.from_file(io.BytesIO(response.audio_content), format="mp3")
         combined_audio += audio_chunk + AudioSegment.silent(duration=600)
+
+    if len(combined_audio) == 0:
+        raise ValueError("Audio generation resulted in an empty file. All TTS requests may have failed.")
+
     combined_audio.export(output_filepath, format="mp3")
     print(f"Audio content successfully written to file '{output_filepath}'")
     return True
