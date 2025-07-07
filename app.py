@@ -8,6 +8,7 @@ import firebase_admin
 from firebase_admin import credentials, firestore, storage
 from google.cloud import texttospeech
 import google.generativeai as genai
+from google.cloud import aiplatform
 
 # --- App & CORS Configuration ---
 app = Flask(__name__)
@@ -18,11 +19,14 @@ db = None
 bucket = None
 tts_client = None
 genai_model = None
+aip_client = None # <-- For Vertex AI
+pixabay_api_key = None # <-- For Pixabay
+pexels_api_key = None # <-- For Pexels
 
 # --- Service Initialization ---
 def initialize_services():
     """Initializes all external services. Called within app context."""
-    global db, bucket, tts_client, genai_model
+    global db, bucket, tts_client, genai_model, aip_client, pixabay_api_key, pexels_api_key
 
     if not firebase_admin._apps:
         print("Initializing Firebase...")
@@ -44,6 +48,32 @@ def initialize_services():
         genai.configure(api_key=gemini_api_key)
         genai_model = genai.GenerativeModel('gemini-1.5-pro-latest')
         print("Google Gemini Initialized.")
+
+    if aip_client is None:
+        try:
+            print("Initializing Google Cloud AI Platform (Vertex AI)...")
+            project_id = os.environ.get('GCP_PROJECT_ID')
+            location = 'us-central1' # Or your preferred location
+            aiplatform.init(project=project_id, location=location)
+            aip_client = True # Set a flag to show it's initialized
+            print("AI Platform client initialized.")
+        except Exception as e:
+            print(f"FATAL: Could not initialize AI Platform client: {e}")
+            raise e
+        
+    if pixabay_api_key is None:
+        pixabay_api_key = os.environ.get('PIXABAY_API_KEY') # Use your variable name
+        if pixabay_api_key:
+             print("Pixabay API key loaded.")
+        else:
+             print("WARNING: PIXABAY_API_KEY not set.")
+
+    if pexels_api_key is None:
+        pexels_api_key = os.environ.get('PEXELS_API_KEY') # Use your variable name
+        if pexels_api_key:
+             print("Pexels API key loaded.")
+        else:
+             print("WARNING: PEXELS_API_KEY not set.")
 
 # --- Celery Configuration ---
 def make_celery(app):

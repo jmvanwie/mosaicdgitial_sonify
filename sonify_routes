@@ -1,0 +1,133 @@
+# sonify_routes.py
+
+import os
+import uuid
+import re
+import io
+from flask import Blueprint, request, jsonify
+from pydub import AudioSegment
+
+# Get the main app's Celery instance and service clients
+from app import celery, db, bucket, tts_client, genai_model
+
+# Create a Blueprint
+sonify_bp = Blueprint('sonify_bp', __name__)
+
+# --- Sonify Helper Functions ---
+def generate_script_from_idea(topic, context, duration):
+    print(f"Generating SONIFY script for topic: {topic}")
+    prompt = (
+        "You are a scriptwriter for a popular podcast. Your task is to write a script for two AI hosts, Trystan (male) and Saylor (female). "
+        "The hosts are witty, charismatic, and engaging. The dialogue should feel natural, warm, and have a good back-and-forth conversational flow. "
+        f"The topic is: '{topic}'. "
+        f"Additional context: '{context}'. "
+        f"The podcast should be approximately {duration} long. "
+        "--- \n"
+        "IMPORTANT INSTRUCTIONS: \n"
+        "1.  Start each line with the speaker's tag, either '[Trystan]' or '[Saylor]'. \n"
+        "2.  Alternate speakers for each line of dialogue. \n"
+        "3.  Do NOT include any other text, directions, or formatting. \n"
+        "4.  EXAMPLE: \n"
+        "[Trystan] Welcome back to AI Insights! Today, we're tackling a huge topic: quantum computing. \n"
+        "[Saylor] It sounds intimidating, but I promise we'll make it fun. Ready to dive in? \n"
+        "[Trystan] Absolutely. So, at its core, what makes a quantum computer different from the one on your desk?"
+    )
+    response = genai_model.generate_content(prompt)
+    return response.text
+
+def parse_script(script_text):
+    print("Parsing script...")
+    pattern = re.compile(r'\[(Trystan|Saylor)\]\s*([^\n\[\]]*)')
+    return pattern.findall(script_text)
+
+def generate_podcast_audio(script_text, voice_names):
+    print(f"Generating audio for voices: {voice_names}")
+    dialogue_parts = parse_script(script_text)
+    if not dialogue_parts:
+        raise ValueError("Script is empty or could not be parsed.")
+    
+    from google.cloud import texttospeech # Import here to ensure it's available in the task context
+    voice_map = {'Trystan': voice_names[0], 'Saylor': voice_names[1]}
+    combined_audio = AudioSegment.empty()
+    
+    for speaker, dialogue in dialogue_parts:
+        dialogue = dialogue.strip()
+        if not dialogue: continue
+        voice_name = voice_map.get(speaker)
+        if not voice_name: continue
+
+        phonetic_dialogue = dialogue.replace("Saylor", "sailor")
+        synthesis_input = texttospeech.SynthesisInput(text=phonetic_dialogue)
+        voice_params = texttospeech.VoiceSelectionParams(language_code=voice_name.split('-')[0] + '-' + voice_name.split('-')[1], name=voice_name)
+        audio_config = texttospeech.AudioConfig(audio_encoding=texttospeech.AudioEncoding.MP3)
+        response = tts_client.synthesize_speech(input=synthesis_input, voice=voice_params, audio_config=audio_config)
+        
+        audio_chunk = AudioSegment.from_file(io.BytesIO(response.audio_content), format="mp3")
+        combined_audio += audio_chunk + AudioSegment.silent(duration=600)
+    
+    return combined_audio
+
+# --- Sonify Celery Task ---
+@celery.task
+def generate_podcast_task(job_id, topic, context, duration, voices):
+    print(f"WORKER: Starting Sonify job {job_id} for topic: {topic}")
+    doc_ref = db.collection('podcasts').document(job_id)
+    output_filepath = f"{job_id}.mp3"
+    
+    try:
+        doc_ref.set({'topic': topic, 'status': 'processing', 'created_at': firestore.SERVER_TIMESTAMP})
+        
+        original_script = generate_script_from_idea(topic, context, duration)
+        if not original_script: raise Exception("Script generation failed.")
+        
+        doc_ref.update({'status': 'generating_audio'})
+        podcast_audio = generate_podcast_audio(original_script, voices)
+        
+        doc_ref.update({'status': 'uploading'})
+        podcast_audio.export(output_filepath, format="mp3")
+
+        # Finalize
+        storage_path = f"podcasts/{job_id}.mp3"
+        blob = bucket.blob(storage_path)
+        blob.upload_from_filename(output_filepath)
+        blob.make_public()
+        podcast_url = blob.public_url
+        os.remove(output_filepath)
+        
+        doc_ref.update({'status': 'complete', 'podcast_url': podcast_url, 'completed_at': firestore.SERVER_TIMESTAMP, 'generated_script': original_script})
+        print(f"Sonify Job {job_id} completed successfully.")
+
+    except Exception as e:
+        print(f"ERROR in Sonify task {job_id}: {e}")
+        doc_ref.update({'status': 'failed', 'error_message': str(e)})
+        if os.path.exists(output_filepath): os.remove(output_filepath)
+
+# --- Sonify API Endpoints ---
+@sonify_bp.route("/generate-from-idea", methods=["POST"])
+def handle_idea_generation():
+    data = request.get_json()
+    if not data or not all(k in data for k in ['topic', 'context']):
+        return jsonify({"error": "topic and context are required"}), 400
+    
+    job_id = str(uuid.uuid4())
+    voices = data.get('voices', ['en-US-Chirp3-HD-Iapetus', 'en-US-Chirp3-HD-Leda'])
+    
+    generate_podcast_task.delay(
+        job_id, 
+        data['topic'], 
+        data['context'], 
+        data.get('duration', '5 minutes'),
+        voices
+    )
+    return jsonify({"message": "Podcast generation has been queued!", "job_id": job_id}), 202
+
+@sonify_bp.route("/podcast-status/<job_id>", methods=["GET"])
+def get_podcast_status(job_id):
+    try:
+        doc_ref = db.collection('podcasts').document(job_id)
+        doc = doc_ref.get()
+        if not doc.exists:
+            return jsonify({"error": "Job not found"}), 404
+        return jsonify(doc.to_dict()), 200
+    except Exception as e:
+        return jsonify({"error": f"An error occurred: {e}"}), 500
