@@ -131,3 +131,4 @@ def get_podcast_status(job_id):
         return jsonify(doc.to_dict()), 200
     except Exception as e:
         return jsonify({"error": f"An error occurred: {e}"}), 500
+    
